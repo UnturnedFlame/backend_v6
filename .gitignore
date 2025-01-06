@@ -1,3 +1,6 @@
 
 app1/module_management/algorithms/models/health_evaluation/model_1.pkl
 app1/module_management/algorithms/models/health_evaluation/model_2.pkl
+app1/module_management/algorithms/models/checkpoints/lightweight_cnn_conformer/augepoch=22_cosine_eer=0.65_as_norm(0.61).ckpt
+app1/module_management/algorithms/models/checkpoints/sepformer.pth.tar
+app1/module_management/algorithms/models/checkpoints/conformer.pth.tar

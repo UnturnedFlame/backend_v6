@@ -96,7 +96,7 @@ def user_save_model(request):
                                                      parent=parent_node).exists():
                 return JsonResponse({'message': '保存失败，该类型下同名模型已经存在', 'code': 400})
             else:
-                # print('zzzzzzzzzzzzzzzz')
+
                 # 保存的模型默认是未发布的
                 saved_model = models.UserModel.objects.create(author=user, model_name=model_name,
                                                               model_info=params_json,
@@ -248,7 +248,7 @@ def admin_handle_publish_model_application(request):
             return JsonResponse({'message': 'unknown error', 'code': 405})
 
 
-# 用户上传增值服务组件
+# 用户上传新增组件
 def upload_extra_algorithm(request):
     if request.method == 'POST':
         token = extract_jwt_from_request(request)
@@ -1137,7 +1137,8 @@ def run_with_datafile_on_cloud(request):
                                 labels = np.load(example_for_validation['multiple_sensor_labels'])
                             sample_state_membership = result['各样本状态隶属度']
                             print(f"各样本状态隶属度: {sample_state_membership}")
-                            he_validation_result = plot_health_evaluation_comparison(file_path, sample_state_membership, labels)
+                            he_validation_result = plot_health_evaluation_comparison(file_path, sample_state_membership,
+                                                                                     labels)
                             results[module]['he_validation_result'] = he_validation_result
 
                         for key, value in result.items():
@@ -1156,7 +1157,7 @@ def run_with_datafile_on_cloud(request):
                     return JsonResponse({'message': 'fail, file not found', 'code': 404})
             except Exception as e:
                 print(f"运行算法引擎出错： ", str(e))
-                return JsonResponse({'message': 'file not found', 'code': 404})
+                return JsonResponse({'message': '数据匹配出错', 'code': 404})
 
         except Exception as e:
             print(str(e))
@@ -1252,7 +1253,7 @@ def plot_health_evaluation_comparison(example_filepath, sample_state_membership:
 
     label_counts = np.array([num_has_fault, num_no_fault])
 
-    print(f"label_counts: {label_counts}")
+    # print(f"label_counts: {label_counts}")
 
     # 设置中文字体
     matplotlib.rcParams['font.sans-serif'] = ['SimHei']  # 使用黑体
@@ -1366,7 +1367,7 @@ def plot_raw_data_waveform(example_filepath):
 def browse_file_content(request):
     if request.method == 'GET':
         filename = request.GET.get('filename')
-        print(f'filename: {filename}')
+        # print(f'filename: {filename}')
         token = extract_jwt_from_request(request)
 
         try:
@@ -2081,7 +2082,7 @@ def delete_node(request):
             if not node:
                 return JsonResponse({'message': 'Node does not exist', 'code': 400})
             node.delete()
-            # 如果model不为None，则删除model
+            # 如果model不为None，则删除该节点对应的模型
             if node.model:
                 node.model.delete()
             # 如果节点值与树名相同，则删除树

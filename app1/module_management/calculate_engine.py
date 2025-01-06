@@ -175,6 +175,7 @@ class Reactor:
             #     multiple_sensor = data_with_selected_features.get('multiple_sensor')
             # else:
             #     multiple_sensor = None
+            print(f"private_scaler_algorithm: {private_scale_algorithm}")
             scaled_data, scaled_data_display, data_scaled_save_path, ms = dimensionless(data, None,
                                                                                         user_dir=user_dir,
                                                                                         option=use_algorithm,
@@ -697,10 +698,12 @@ class Reactor:
                 multiple_sensor)
         else:
             # 扩充的故障诊断模型
-            additional_model_type_list = ['additional_model_one_multiple', 'additional_model_two_multiple',
-                                          'additional_model_three_multiple',
-                                          'additional_model_four_multiple', 'additional_model_five',
-                                          'additional_model_six', 'additional_model_seven']
+            additional_model_type_list = ['additional_model_one_multiple_deeplearning',
+                                          'additional_model_two_multiple_deeplearning',
+                                          'additional_model_three_multiple_deeplearning',
+                                          'additional_model_four_multiple_deeplearning',
+                                          'additional_model_five_deeplearning',
+                                          'additional_model_six_deeplearning', 'additional_model_seven_deeplearning']
             if use_algorithm in additional_model_type_list:
                 (indicator, x_axis, num_has_fault, num_has_no_fault,
                  figure_path, complementary_figure, complementary_summary) = additional_fault_diagnose(
@@ -787,7 +790,9 @@ class Reactor:
             self.module_configuration['故障预测']['result'][
                 'evaluation'] = '经算法预测，目前该部件<span style=\"color: red\">已经故障</span>'
             self.module_configuration['故障预测']['result']['figure_path'] = figure_path
+            self.results_to_response['故障预测']['prediction_conclusion'] = '经算法预测，目前该部件已经故障'
         elif time_to_fault is None:
+            # 故障预测出现故障
             return ''
         else:
             # 计算可能会出故障的时间
@@ -795,6 +800,7 @@ class Reactor:
             self.module_configuration['故障预测']['result'][
                 'evaluation'] = f'目前该部件<span style=\"color: red\">还未出现故障</span>，预测<span style=\"color: red\">{time_to_fault_str}</span>后会出现故障'
             self.module_configuration['故障预测']['result']['figure_path'] = figure_path
+            self.results_to_response['故障预测']['prediction_conclusion'] = f'目前该部件还未出现故障'
         self.results_to_response['故障预测']['figure_Base64'] = figure_path
         self.results_to_response['故障预测']['time_to_fault'] = str(time_to_fault)
         self.results_to_response['故障预测']['time_to_fault_str'] = time_to_fault_str

@@ -1004,11 +1004,11 @@ def additional_fault_diagnose(datastream, multiple_sensor=False, model_type='add
             example = examples[i * 2048:(i + 1) * 2048]
             if not multiple_sensor:
                 # 单传感器的时频图卷积模型的故障诊断
-                if model_type == 'additional_model_five':
+                if model_type == 'additional_model_five_deeplearning':
                     predicted_class = single_sensor_1.fault_diagnose(example.flatten())
-                elif model_type == 'additional_model_six':
+                elif model_type == 'additional_model_six_deeplearning':
                     predicted_class = single_sensor_2.fault_diagnose(example.flatten())
-                elif model_type == 'additional_model_seven':
+                elif model_type == 'additional_model_seven_deeplearning':
                     predicted_class = single_sensor_3.fault_diagnose(example.flatten())
                 else:
                     print("未知的模型类型")
@@ -1017,13 +1017,13 @@ def additional_fault_diagnose(datastream, multiple_sensor=False, model_type='add
             else:
                 # 多传感器模型的故障诊断
                 # input_data = torch.from_numpy(example).type(torch.cuda.FloatTensor).unsqueeze(dim=0).mT
-                if model_type == 'additional_model_one_multiple':
+                if model_type == 'additional_model_one_multiple_deeplearning':
                     predicted_class = mutli_sensor_1.fault_diagnose(example)
-                elif model_type == 'additional_model_two_multiple':
+                elif model_type == 'additional_model_two_multiple_deeplearning':
                     predicted_class = mutli_sensor_2.fault_diagnose(example)
-                elif model_type == 'additional_model_three_multiple':
+                elif model_type == 'additional_model_three_multiple_deeplearning':
                     predicted_class = mutli_sensor_3.fault_diagnose(example)
-                elif model_type == 'additional_model_four_multiple':
+                elif model_type == 'additional_model_four_multiple_deeplearning':
                     predicted_class = mutli_sensor_4.fault_diagnose(example)
                 else:
                     print("未知的模型类型")

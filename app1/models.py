@@ -29,6 +29,7 @@ class UserModel(models.Model):
     is_published = models.CharField(verbose_name="发布状态", max_length=16, null=False, blank=False, default='未发布')
     # component_tree = models.ForeignKey(ComponentTree, on_delete=models.CASCADE)
     # parent_node = models.ForeignKey(ComponentNode, on_delete=models.CASCADE)
+    # relationship = models.ForeignKey(to=relation, on_delete=models.CASCADE, verbose_name="")
 
     def __str__(self):
         return self.model_name
@@ -216,26 +217,6 @@ class ComponentNode(models.Model):
             is_published=is_published  # 当前添加的模型的发布状态
         )
 
-    # @staticmethod
-    # def get_next_sibling_number(parent_value):
-    #     """获取下一个兄弟节点编号"""
-    #     max_sibling = ComponentNode.objects.filter(value__startswith=f"{parent_value}.").aggregate(models.Max('value'))[
-    #         'value__max']
-    #     print(f"max_sibling: {max_sibling}")
-    #     if max_sibling:
-    #         return int(max_sibling.split('.')[-1]) + 1
-    #     return 1
-    # @staticmethod
-    # def get_next_sibling_number(parent_value, node_level):
-    #     """获取下一个兄弟节点编号"""
-    #     max_sibling = ComponentNode.objects.filter(
-    #         value__startswith=f"{parent_value}.",
-    #         node_level=node_level
-    #     ).aggregate(models.Max('value'))['value__max']
-    #     print(f"max_sibling: {max_sibling}")
-    #     if max_sibling:
-    #         return int(max_sibling.split('.')[-1]) + 1
-    #     return 1
     @staticmethod
     def get_next_sibling_number(parent_value, node_level):
         """获取下一个兄弟节点编号"""
@@ -260,6 +241,16 @@ class ComponentNode(models.Model):
 
         return max_sibling_number + 1
 
+    def delete(self, *args, **kwargs):
+        """删除节点时，删除其子节点"""
+        children = self.children.all()
+        for child in children:
+            if child.model:
+                child.model.delete()
+        super().delete(*args, **kwargs)
 
 
-
+# class RelationOfModelAndTree(models.Model):
+#
+#     """模型和树之间的关联"""
+#     treenode = models.ForeignKey(ComponentNode, on_delete=models.CASCADE)
