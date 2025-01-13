@@ -40,7 +40,7 @@ class PublishModelsApplication(models.Model):
     applicant = models.ForeignKey(to=settings.AUTH_USER_MODEL, on_delete=models.CASCADE, verbose_name="申请人", related_name='applicant_publish_models_applications')
     # model_name = models.CharField(verbose_name="模型名称", max_length=32, null=False, blank=False, default='unknown')
     model = models.ForeignKey(to=UserModel, on_delete=models.CASCADE, verbose_name="模型")
-    create_time = models.DateTimeField(verbose_name="申请时间", null=False, blank=False, auto_now_add=True)
+    create_time = models.DateTimeField(verbose_name="申请时间", null=False, blank=False)
     status = models.CharField(verbose_name="申请状态", max_length=16, null=False, blank=False, default='未处理')
     auditor = models.ForeignKey(to=settings.AUTH_USER_MODEL, on_delete=models.CASCADE, verbose_name="审批人", null=True, default=None, related_name='auditor_publish_models_applications')
     audition_time = models.DateTimeField(verbose_name="审批时间", null=True, blank=True)

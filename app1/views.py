@@ -132,7 +132,7 @@ def user_applies_to_publish_model(request):
                 if models.UserModel.objects.filter(author=user, is_published='申请中').count() > 1000:
                     return JsonResponse({'message': '您的申请已超过1000条，请等待管理员审核', 'code': 400})
                 # 向管理员提交发布申请
-                models.PublishModelsApplication.objects.create(model=model, applicant=user)
+                models.PublishModelsApplication.objects.create(model=model, applicant=user, create_time=datetime.now())
                 # 更新用户已保存模型的发布状态
                 model.is_published = '申请中'
                 model.save()
@@ -201,6 +201,10 @@ def admin_delete_publish_model_application(request):
             user = User.objects.get(username=username)
             if user.groups.filter(name='admin').exists():
                 application = models.PublishModelsApplication.objects.get(id=application_id)
+                if application.status == '未处理':
+                    if application.model:
+                        application.model.is_published = '未发布'
+                        application.model.save()
                 application.delete()
                 return JsonResponse({'message': 'success', 'code': 200})
         except Exception as e:
@@ -941,7 +945,7 @@ def user_fetch_datafiles(request):
 
 
 # 用户删除数据文件
-def delete_datafile(request):
+def user_delete_datafile(request):
     if request.method == 'GET':
         token = extract_jwt_from_request(request)
         filename = request.GET.get('filename')

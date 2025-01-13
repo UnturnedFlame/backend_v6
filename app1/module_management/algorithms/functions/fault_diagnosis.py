@@ -37,7 +37,7 @@ choose_features_eng = ['std', 'rms', 'var', 'rectified_mean', 'root_amplitude', 
 choose_features = ['标准差', '均方根', '方差', '整流平均值', '方根幅值', '峰峰值', '六阶累积量', '均值',
                    '四阶累积量', '最小值']
 choose_features_multiple = ['X维力(N)_六阶累积量', 'X维力(N)_峰峰值', 'X维力(N)_重心频率', 'X维力(N)_最大值', 'X维力(N)_四阶累积量',
-                            'X维力(N)_方差', 'X维力(N)_裕度因子', 'X维力(N)_标准差', 'X维力(N)_均方根', 'X维力(N)_方根幅值']
+                   'X维力(N)_方差', 'X维力(N)_裕度因子', 'X维力(N)_标准差', 'X维力(N)_均方根', 'X维力(N)_方根幅值']
 
 
 # 解决提取特征中英文名称不一致的问题
@@ -85,22 +85,27 @@ def diagnose_with_svc_model(data_with_selected_features, multiple_sensor=False, 
         num_has_fault = 0  # 记录有故障的样本的数量
         x_axis = []  # 横坐标，即样本的索引
         for i in range(num_examples):
-            temp_example = example[i:i+1]
+            temp_example = example.iloc[i:i+1]
             if not multiple_sensor:
                 # 树模型没有标准化，svc（支持向量机）有
                 scaler = joblib.load('app1/module_management/algorithms/models/fault_diagnosis/svc/scaler_2.pkl')
                 # 使用训练阶段保存的 StandardScaler 对测试数据进行同样的变换
                 # train_data[choose_features] = scaler.transform(train_data[choose_features])
-                temp_example[choose_features] = scaler.transform(temp_example[choose_features])
+                # example[choose_features][i:i+1] = scaler.transform(example[choose_features][i:i+1])
+                temp_example.loc[:, choose_features] = scaler.transform(temp_example[choose_features])
                 # 预测结果为“0”代表无故障，“1”代表有故障
                 svc_model = joblib.load('app1/module_management/algorithms/models/fault_diagnosis/svc/svc_model_2.pkl')
-                svc_prediction = svc_model.predict(temp_example[choose_features][0:1])[0]
+                svc_prediction = svc_model.predict(temp_example[choose_features])[0]
             else:
                 scaler = joblib.load('app1/module_management/algorithms/models/fault_diagnosis/svc/mutli_scaler.pkl')
-                temp_example[choose_features_multiple] = scaler.transform(temp_example[choose_features_multiple])
+                # example[choose_features_multiple][i:i+1] = scaler.transform(example[choose_features_multiple][i:i+1])
+                # temp_example.loc[:, choose_features_multiple] = scaler.transform(temp_example[choose_features_multiple])
+                scaled_features = scaler.transform(temp_example[choose_features_multiple])
+
+                print(f"scaled_features: {scaled_features}")
 
                 svc_model = joblib.load('app1/module_management/algorithms/models/fault_diagnosis/svc/mutli_svc_model.pkl')
-                svc_prediction = svc_model.predict(temp_example[choose_features_multiple][0:1])[0]
+                svc_prediction = svc_model.predict(scaled_features)[0]
             if svc_prediction == 1:
                 num_has_fault += 1
                 predictions.append(1)
@@ -160,19 +165,20 @@ def diagnose_with_random_forest_model(data_with_selected_features, multiple_sens
         num_has_fault = 0  # 记录有故障的样本的数量
         x_axis = []  # 横坐标，即样本的索引
         for i in range(num_examples):
+            temp_example = example.iloc[i:i+1]
             if not multiple_sensor:
                 # 单传感器的模型预测
                 random_forest_model = joblib.load('app1/module_management/algorithms/models/fault_diagnosis/random_forest'
                                                   '/random_forest_model_2.pkl')
-                random_forest_predictions = random_forest_model.predict(example[choose_features][i:i+1])
+                random_forest_predictions = random_forest_model.predict(temp_example[choose_features])
             else:
                 # 多传感器的模型预测
                 random_forest_model = joblib.load('app1/module_management/algorithms/models/fault_diagnosis/random_forest'
-                                                  '/mutli_random_forest_model.pkl')
-                random_forest_predictions = random_forest_model.predict(example[choose_features_multiple][i:i+1])
+                                                  '/multi_random_forest_model.pkl')
+                random_forest_predictions = random_forest_model.predict(temp_example[choose_features_multiple])
             print(f'random_forest_predictions: {random_forest_predictions}')
             # 统计有故障的样本的数量，同时记录下有故障样本的索引
-            if random_forest_predictions[0] == 1:
+            if int(random_forest_predictions[0]) == 1:
                 num_has_fault += 1
                 predictions.append(1)
                 x_axis.append(f'样本{i+1}（有故障）')

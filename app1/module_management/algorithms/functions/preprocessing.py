@@ -14,6 +14,7 @@ from scipy.interpolate import PchipInterpolator, interp1d, lagrange, CubicSpline
 from scipy.io import savemat
 from torch import nn
 import subprocess
+import matplotlib.patches as mpatches
 
 from app1.module_management.algorithms.functions.feature_extraction import time_domain_extraction, \
     frequency_domain_extraction
@@ -91,7 +92,7 @@ def wavelet_transform_processing(raw_data, wavelet='db1', level=1, user_dir=None
                 # 调用小波降噪
                 transformed_data = wavelet_denoise(raw_data.flatten(), wavelet, int(level))
             else:
-                print(f'extra algorithm {extra_algorithm}')
+                # print(f'extra algorithm {extra_algorithm}')
                 # 调用用户上传的专有小波变换算法
                 input_filepath = extra_algorithm_user_dir + '/input_data.npy'  # 以文件形式向专有小波变换算法传递输入数据
                 np.save(input_filepath, raw_data.flatten())
@@ -271,7 +272,7 @@ def private_feature_selection():
 
 # 对信号的插值，包含多传感器信号与单传感器的信号
 def interpolation_for_signals(raw_data: np.ndarray, algorithm, filename, user_dir=None, private_algorithm=None,
-                              multiple_sensor=False):
+                              multiple_sensor=False, has_nan_value=True):
     """
     对信号的插值算法，包含多传感器信号与单传感器的信号
     :param private_algorithm: 如果不为None，则调用用户上传的私有算法
@@ -280,6 +281,7 @@ def interpolation_for_signals(raw_data: np.ndarray, algorithm, filename, user_di
     :param raw_data: 原始数据
     :param filename: 原始数据的来源文件
     :param multiple_sensor: 是否为多传感器的数据
+    :param has_nan_value: 是否需要插值处理
     :return: 插值后的数据以及插值结果图像的存放路径, multiple_sensor=True时为多传感器数据
     """
     # print('raw_data: ', raw_data.shape)
@@ -296,7 +298,13 @@ def interpolation_for_signals(raw_data: np.ndarray, algorithm, filename, user_di
             # multiple_sensor = False
             # 插值结果的图像保存路径
             save_path = save_path_dir + '/' + f'{filename}_result.png'
-            if algorithm == 'neighboring_values_interpolation':
+            if not has_nan_value:
+                # 如果没有NaN值，则直接返回原始数据
+                data_interpolated = raw_data.copy()
+                plot_interpolation(raw_data, data_interpolated, save_path, has_nan_value=False)
+                print(f'--------------------没有NAN值----------')
+                figure_path = save_path
+            elif algorithm == 'neighboring_values_interpolation':
                 # 邻近值插值算法
                 data_interpolated, figure_path = neighboring_values_interpolation_for_signal(raw_data, save_path)
                 # print('data_interpolated: ', data_interpolated.shape)
@@ -336,7 +344,17 @@ def interpolation_for_signals(raw_data: np.ndarray, algorithm, filename, user_di
             all_data_interpolated = []
             all_figure_paths = []
             # 根据选择算法，对来自每一个传感器的长度为2048的信号进行插值
-            if algorithm == 'neighboring_values_interpolation':
+            if not has_nan_value:
+                for i in range(sensor_num):
+                    save_path = save_path_dir + '/sensor_' + str(i + 1) + '.png'
+                    data_interpolated = raw_data[:, i]
+                    figure_path = save_path
+                    plot_interpolation(raw_data[:, i].flatten(), raw_data[:, i].flatten(), save_path, has_nan_value=False)
+                    # data_interpolated, figure_path = neighboring_values_interpolation_for_signal(
+                    #     raw_data[:, i].flatten(), save_path)
+                    all_data_interpolated.append(data_interpolated)
+                    all_figure_paths.append(figure_path)
+            elif algorithm == 'neighboring_values_interpolation':
                 # 邻近值插值算法
                 for i in range(sensor_num):
                     save_path = save_path_dir + '/sensor_' + str(i + 1) + '.png'
@@ -465,12 +483,13 @@ def get_filetype(datafile):
 
 
 # 绘制插值处理结果图像（对信号插值）
-def plot_interpolation(raw_data: np.ndarray, interpolated_data: np.ndarray, save_path):
+def plot_interpolation(raw_data: np.ndarray, interpolated_data: np.ndarray, save_path, has_nan_value=True):
     """
     绘制插值处理后的结果图像
     :param raw_data: 原始数据
     :param interpolated_data: 插补后数据
     :param save_path: 保存插补后数据的路径
+    :param has_nan_value: 是否具有连续的nan值
     :return: 无返回值
     """
     if len(raw_data.shape) == 2:
@@ -500,8 +519,8 @@ def plot_interpolation(raw_data: np.ndarray, interpolated_data: np.ndarray, save
     # 找到最后一个缺失值的下标
     end_missing = np.where(is_nan)[0][-1] if np.any(is_nan) else None
     if start_missing and end_missing:
-        start = start_missing - 50
-        end = end_missing + 50
+        start = start_missing - 50 if start_missing > 50 else 0
+        end = end_missing + 50 if end_missing < len(raw_data) - 50 else len(raw_data)
     else:
         start = 0
         end = len(raw_data)
@@ -513,13 +532,15 @@ def plot_interpolation(raw_data: np.ndarray, interpolated_data: np.ndarray, save
 
     plt.figure(figsize=(20, 10))
     # 绘制测试样本散点图
-    plt.scatter(np.array(range(start, end)), raw_data_display, c='blue', marker='o', label='原始信号样本')
+    plt.scatter(np.array(range(start, end)), raw_data_display, c='blue', marker='+', label='原始信号')
 
-    # 绘制模拟样本散点图，跳过缺失值
-    valid_indices = ~np.isnan(interpolated_data_display)
-    plt.scatter(np.array(range(start, end))[valid_indices], interpolated_data_display[valid_indices], c='red',
-                marker='x',
-                label='插补后信号样本')
+    if has_nan_value:
+        # 绘制模拟样本散点图，只绘制出插补的缺失值部分
+        valid_indices = np.isnan(raw_data_display)
+        plt.scatter(np.array(range(start, end))[valid_indices], interpolated_data_display[valid_indices], c='red',
+                    marker='o',
+                    # edgecolors='red',  # 设置边缘颜色为红色
+                    label='插补信号')
     print(f"interpolated_data_display: {interpolated_data_display.shape}")
 
     # 标注缺失值的区间
@@ -532,7 +553,93 @@ def plot_interpolation(raw_data: np.ndarray, interpolated_data: np.ndarray, save
     plt.xlabel('时间点')
     plt.ylabel('采样值')
 
-    # 显示图形
+    # 保存图形
+    plt.savefig(save_path)
+
+
+# 定义一个检测ndarray中nan值的函数, 如果发现连续的5个以上的nan值，则返回True，否则返回False
+def has_consecutive_nan(raw_signal, user_dir):
+    """
+    :param raw_signal: 传入的信号
+    :param user_dir: 用户目录
+    :return 是否需要插值处理，以及缺失值检测的结果
+    """
+    if len(raw_signal.shape) == 1:
+        raw_signal = raw_signal.reshape(1, -1)
+    else:
+        if raw_signal.shape[0] > raw_signal.shape[1]:
+            raw_signal = raw_signal.T
+
+    num_sensors = raw_signal.shape[0]  # 传感器的数量
+    num_nan_continuous = 0
+    interpolation_necessity = False
+
+
+    figure_paths = []  # 保存的缺失值检测图像路径
+    save_path_dir = os.path.join(output_root_dir, 'anomaly_detection', user_dir)
+    if not os.path.exists(save_path_dir):
+        os.makedirs(save_path_dir)
+    # 分传感器进行缺失值检测
+    for i in range(num_sensors):
+        nan_occurs_index = []
+        tmp_array = raw_signal[i]
+        # 获取数组的长度
+        length = tmp_array.shape[0]
+        # 遍历数组中的每个元素
+        for j in range(length):
+            # 如果当前元素是nan，则判断下一个元素是否也是nan
+            # if np.isnan(tmp_array[j]):
+            #     # 如果下一个元素也是nan，则判断下一个元素是否也是nan
+            #     if j + 1 < length and np.isnan(tmp_array[j + 1]):
+            #         if j + 2 < length and np.isnan(tmp_array[j + 2]):
+            #             if j + 3 < length and np.isnan(tmp_array[j + 3]):
+            #                 if j + 4 < length and np.isnan(tmp_array[j + 4]):
+            #                        return True
+            if np.isnan(tmp_array[j]):
+                num_nan_continuous += 1
+                nan_occurs_index.append(j)
+                if num_nan_continuous >= 10:
+                    interpolation_necessity = True
+            else:
+                num_nan_continuous = 0
+        figure_path = os.path.join(save_path_dir, f'sensor{i+1}.png')
+        plot_anomaly_detection(tmp_array, nan_occurs_index, figure_path)
+        figure_paths.append(figure_path)
+
+    return interpolation_necessity, figure_paths
+
+
+def plot_anomaly_detection(raw_signal, index, save_path):
+    """
+    绘制信号异常值检测的结果图像
+    param: raw_signal: 原始信号
+    param: save_path: 结果图像保存路径
+    param: index: 原始信号中缺失值的索引
+    """
+    matplotlib.use('Agg')
+    # 设置全局字体属性，这里以SimHei为例
+    plt.rcParams['font.sans-serif'] = ['SimHei']  # 指定默认字体
+    plt.rcParams['axes.unicode_minus'] = False  # 解决保存图像是负号'-'显示为方块的问题
+    plt.rcParams['font.size'] = 20
+
+    # 绘制信号波形图，并将具有连续缺失值的区间标注出来
+    plt.figure(figsize=(20, 10))
+    # 添加图例
+    # plt.legend()
+    plt.xlabel('采样点')
+    plt.ylabel('信号值')
+    plt.title('信号波形图')
+    plt.plot(raw_signal, color='b', label='原始信号')
+    if index:
+        for i in index:
+            plt.axvspan(i, i + 1, facecolor='r', alpha=0.5)
+            # plt.text(i, 0.5, 'missing', color='r', fontsize=12)
+    # 创建一个代理艺术家用于图例中添加缺失区间的标签
+    missing_patch = mpatches.Patch(color='r', alpha=0.5, label='缺失区间')
+
+    # 添加图例
+    plt.legend(handles=[missing_patch, plt.gca().get_legend_handles_labels()[0][0]])
+    # 保存图形
     plt.savefig(save_path)
 
 
@@ -1353,10 +1460,11 @@ def extract_signal_features(input_data: np.ndarray, features_to_extract, filenam
     :return:
     """
 
-    # all_time_features = ['最大值', '最小值', '中位数', '峰峰值', '均值', '方差', '标准差', '峰度', '偏度', '整流平均值',
+    # 所有的时域和频域的特征名称
+    # all_time_domain_features = ['最大值', '最小值', '中位数', '峰峰值', '均值', '方差', '标准差', '峰度', '偏度', '整流平均值',
     #                      '均方根',
     #                      '方根幅值', '波形因子', '峰值因子', '脉冲因子', '裕度因子', '四阶累积量', '六阶累积量']
-    # all_frequency_features = ['重心频率', '均方频率', '均方根频率', '频率方差', '频率标准差', '谱峭度的均值',
+    # all_frequency_domain_features = ['重心频率', '均方频率', '均方根频率', '频率方差', '频率标准差', '谱峭度的均值',
     #                           '谱峭度的标准差', '谱峭度的峰度', '谱峭度的偏度']
 
     time_domain_features = None
@@ -1385,23 +1493,32 @@ def extract_signal_features(input_data: np.ndarray, features_to_extract, filenam
         all_example_features_extracted_group_by_sensor = {'传感器1': []}
         for i in range(num_example):
             # 根据用户需要提取时域和频域特征
+            single_feature = []
             for domain, features in features_to_extract.items():
                 if features:
                     if domain == 'time_domain':
                         time_domain_features = time_domain_extraction(split_data[i, :], features)
-                        values = [list(time_domain_features.values())]
-                        time_domain_features = pd.DataFrame(data=values, columns=features)
+                        time_domain_values = [list(time_domain_features.values())]
+                        single_feature += list(time_domain_features.values())
+                        time_domain_features = pd.DataFrame(data=time_domain_values, columns=features)
                     else:
                         frequency_domain_features = frequency_domain_extraction(split_data[i, :], features)
-                        values = [list(frequency_domain_features.values())]
-                        frequency_domain_features = pd.DataFrame(data=values, columns=features)
+                        frequency_domain_values = [list(frequency_domain_features.values())]
+                        single_feature += list(frequency_domain_features.values())
+                        frequency_domain_features = pd.DataFrame(data=frequency_domain_values, columns=features)
+
             single_features_extracted = pd.concat([time_domain_features, frequency_domain_features], axis=1)
             # single_features_extracted_group_by_sensor = {'sensor_1': single_features_extracted.iloc[0].tolist()}
             if save and filename is not None:
                 # 单传感器特征保存
                 all_example_features_extracted_group_by_sensor['传感器1'].append(
                     single_features_extracted.iloc[0].tolist())
-            all_example_features_extracted = pd.concat([all_example_features_extracted, single_features_extracted])
+            if all_example_features_extracted.empty:
+                all_example_features_extracted = single_features_extracted
+            elif single_features_extracted.empty:
+                pass
+            else:
+                all_example_features_extracted = pd.concat([all_example_features_extracted, single_features_extracted])
             # 将single_features_extracted作为all_example_features_extracted的一行数据插入
             # all_example_features_extracted.append(single_features_extracted, ignore_index=True)
         # print(f'all_example_features_extracted: {all_example_features_extracted}')
@@ -1418,6 +1535,7 @@ def extract_signal_features(input_data: np.ndarray, features_to_extract, filenam
                 os.makedirs(output_file_dir)
             output_file = output_file_dir + '/' + out_filename
 
+            print(f"features_single_sensor_extracted: {all_example_features_extracted}")
             all_example_features_extracted.to_csv(output_file, index=False)
             return output_file, {'features_extracted_group_by_sensor': all_example_features_extracted_group_by_sensor,
                                  'features_name': all_features}, num_example

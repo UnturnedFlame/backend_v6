@@ -31,7 +31,7 @@ urlpatterns = [
     path("shut/", views.shut),
     path("user/save_model/", views.user_save_model),
     path("user/upload_datafile/", views.upload_datafile),
-    path("user/delete_datafile/", views.delete_datafile),
+    path("user/delete_datafile/", views.user_delete_datafile),
     path("user/fetch_models/", views.superuser_fetch_models),
     path("user/delete_model/", views.user_delete_model),
     path("user/fetch_datafiles/", views.user_fetch_datafiles),
@@ -80,7 +80,7 @@ urlpatterns = [
     path('administration/update_feedback_status/', views.update_feedback_status),
     path('administration/fetch_publish_model_applications/', views.admin_fetch_publish_model_applications),
     path('administration/handle_publish_model_request/', views.admin_handle_publish_model_application),
-    path('administration/delete_publish_model_applications', views.admin_delete_publish_model_application)
+    path('administration/delete_publish_model_applications/', views.admin_delete_publish_model_application)
 
     # path('', TemplateView.as_view(template_name='index.html'), name='index')
 ]

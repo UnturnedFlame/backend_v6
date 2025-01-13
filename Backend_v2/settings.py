@@ -25,6 +25,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = "django-insecure-pz9(4bujnfh5je#&o^7mnx))0(gqq&=qy=(j^6xipqgw24momo"
 
+# 设置中国时区
+LANGUAGE_CODE = 'zh-hans'
+TIME_ZONE = 'Asia/Shanghai'
+
+USE_TZ = False
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 

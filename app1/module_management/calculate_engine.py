@@ -4,6 +4,7 @@ import os.path
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
+from sympy import false
 
 from app1.module_management.algorithms.functions.fault_diagnosis import diagnose_with_svc_model, \
     diagnose_with_random_forest_model, time_regression, diagnose_with_ulcnn, diagnose_with_simmodel, \
@@ -18,7 +19,7 @@ from app1.module_management.algorithms.functions.load_data import load_data
 from app1.module_management.algorithms.functions.preprocessing import bicubic_interpolation, polynomial_interpolation, \
     newton_interpolation, linear_interpolation, lagrange_interpolation, extract_signal_features, \
     wavelet_transform_processing, \
-    extract_features_with_multiple_sensors, dimensionless, interpolation_for_signals
+    extract_features_with_multiple_sensors, dimensionless, interpolation_for_signals, has_consecutive_nan
 
 """
 处理用户运行算法模型请求的算法引擎
@@ -64,7 +65,7 @@ class Reactor:
                                      ['音频分离', '声纹识别', '说话人注册', '添加噪声', '插值处理', '特征提取',
                                       '层次分析模糊综合评估', '层次朴素贝叶斯评估', '层次逻辑回归评估', '健康评估',
                                       '小波变换', '特征选择', '故障诊断', '故障预测',
-                                      '无量纲化']}
+                                      '无量纲化', '异常值检测']}
 
         for module in self.schedule:
             self.module_configuration[module]['algorithm'] = algorithm_dict[module]
@@ -75,11 +76,12 @@ class Reactor:
                                     ['音频分离', '声纹识别', '说话人注册', '添加噪声', '插值处理', '特征提取',
                                      '层次分析模糊综合评估', '层次朴素贝叶斯评估', '层次逻辑回归评估', '健康评估',
                                      '小波变换', '特征选择', '故障诊断', '故障预测',
-                                     '无量纲化']}
+                                     '无量纲化', '异常值检测']}
         # 运行过程中各个模块之间数据交换的格式，类似于数据流，每次传递数据时包含上一个模块的运行结果
         self.data_stream = {'filepath': None, 'raw_data': None, 'extracted_features': None,
                             'filename': None, 'user_dir': None, 'features_name': None, 'diagnosis_result': None,
                             'features_group_by_sensor': None, 'multiple_sensor': multiple_sensor}
+        self.has_anomaly_data = False
         self.gradio_app = None
         self.lightning_model = None
 
@@ -189,9 +191,12 @@ class Reactor:
                 print(f'scaled_data_display: {scaled_data_display}')
                 return ''
             for num, figure in enumerate(scaled_data_display):
-                self.results_to_response['无量纲化'][f'sensor{num + 1}_figure_Base64'] = figure
+                self.results_to_response['无量纲化'][f'传感器{num + 1}_figure_Base64'] = figure
                 self.results_to_response['无量纲化']['datatype'] = 'figure'
 
+        # 确保数据的shape为(n,1)
+        if len(scaled_data.shape) == 1:
+            scaled_data = scaled_data.reshape(-1, 1)
         # 将标准化以后的数据放入数据流
         if not useLog:
             self.construct_data_stream(raw_data=scaled_data, filepath=raw_data_filepath,
@@ -267,6 +272,9 @@ class Reactor:
         transformed_data_save_path = results.get('data_save_path')
         figure_path = results.get('figure_path')
 
+        if len(transformed_data.shape) == 1:
+            transformed_data = transformed_data.reshape(-1, 1)
+
         # 构造数据流
         self.construct_data_stream(raw_data=transformed_data, filename=filename,
                                    filepath=transformed_data_save_path, multiple_sensor=multiple_sensor)
@@ -275,10 +283,11 @@ class Reactor:
             # 小波变换降噪模块运行出错，打印捕获到的错误信息
             print(f'figure_path: {figure_path}')
             return ''
+        print(f'小波变换处理结果: {transformed_data.shape}')
         # results = wavelet_denoise_four_stages(data_mat, filename)
         if figure_path is not None:
             for num, figure in enumerate(figure_path):
-                self.results_to_response['小波变换'][f'sensor{num + 1}_figure_Base64'] = figure
+                self.results_to_response['小波变换'][f'传感器{num + 1}_figure_Base64'] = figure
         else:
             print('无小波变换输出结果')
             # 多段数据的小波降噪
@@ -293,6 +302,44 @@ class Reactor:
         #         #                            filepath=denoised_data_save_path, multiple_sensor=multiple_sensor)
         #
         return self.data_stream
+
+
+    # 异常值检测
+    def anomaly_detection(self, datafile):
+        algorithm = self.module_configuration['异常值检测']['algorithm']
+        self.current_module = '异常值检测'
+        # 如果输入的是字典形式的数据流（datastream）
+        if isinstance(datafile, dict):
+            raw_data = datafile.get('raw_data')
+            filename = datafile.get('filename')
+            # filepath = datafile.get('filepath')
+            user_dir = datafile.get('user_dir')
+        # 否则直接读取原始数据文件路径
+        else:
+            raw_data, filename = load_data(datafile)
+            # 获取用户名
+            self.construct_data_stream(filepath=datafile)
+            user_dir = self.data_stream.get('user_dir')
+        # 信号缺失值检测
+        if algorithm == 'nan_detection':
+            self.has_anomaly_data, figure_paths = has_consecutive_nan(raw_data.copy(), user_dir)
+            print(f'has_anomaly_data: {self.has_anomaly_data}')
+
+            if self.has_anomaly_data:
+                self.results_to_response['异常值检测']['检测结果'] = '该数据中存在连续的5个以上的nan值，建议插值处理'
+            else:
+                self.results_to_response['异常值检测']['检测结果'] = '该数据中不存在连续的5个以上的nan值'
+            if figure_paths is not None:
+                for num, figure in enumerate(figure_paths):
+                    self.results_to_response['异常值检测'][f'传感器{num + 1}_figure_Base64'] = figure
+            else:
+                print('无异常值检测输出结果')
+            self.construct_data_stream(filepath=datafile, raw_data=raw_data, filename=filename)
+        else:
+            return ''
+
+        return self.data_stream
+
 
     def interpolation_v2(self, datafile):
         """
@@ -325,21 +372,37 @@ class Reactor:
             # 获取用户名
             self.construct_data_stream(filepath=datafile)
             user_dir = self.data_stream.get('user_dir')
+        # if self.has_anomaly_data:
+        #     results, multiple_sensor = interpolation_for_signals(raw_data, use_algorithm, filename, user_dir=user_dir,
+        #                                                          private_algorithm=private_interpolation,
+        #                                                          multiple_sensor=self.multiple_sensor, has_nan_value=self.has_anomaly_data)
+        #     interpolated_data_path = results.get('interpolated_data')
+        #     figure_path = results.get('figure_paths')
+        # else:
+        #     # 异常检测没有nan值，不需要进行插值处理
+        #     if self.data_stream.get('filepath'):
+        #         interpolated_data_path = self.data_stream.get('filepath')
+        #     else:
+        #         interpolated_data_path = datafile
+        #     multiple_sensor = self.multiple_sensor
+        #     figure_path = None
+
+
 
         results, multiple_sensor = interpolation_for_signals(raw_data, use_algorithm, filename, user_dir=user_dir,
                                                              private_algorithm=private_interpolation,
-                                                             multiple_sensor=self.multiple_sensor)
-
+                                                             multiple_sensor=self.multiple_sensor, has_nan_value=self.has_anomaly_data)
         interpolated_data_path = results.get('interpolated_data')
         figure_path = results.get('figure_paths')
+
 
         if interpolated_data_path is None:
             # 插值处理出错，打印错误信息
             print(figure_path)
             return ''
-
-        for num, figure in enumerate(figure_path):
-            self.results_to_response['插值处理'][f'sensor{num + 1}_figure_Base64'] = figure
+        if figure_path:
+            for num, figure in enumerate(figure_path):
+                self.results_to_response['插值处理'][f'传感器{num + 1}_figure_Base64'] = figure
 
         # 插值后的数据
         interpolated_data, filename = load_data(interpolated_data_path)
@@ -830,6 +893,8 @@ class Reactor:
                     outcome = self.interpolation_v2(input_data)
             elif module == '特征提取':
                 outcome = self.feature_extraction(input_data)
+            elif module == '异常值检测':
+                outcome = self.anomaly_detection(input_data)
             elif module == '层次分析模糊综合评估':
                 outcome = self.health_evaluation(input_data, algorithm='FAHP')
             elif module == '层次朴素贝叶斯评估':
@@ -860,3 +925,45 @@ class Reactor:
                 queue.put(self.results_to_response)
             except Exception as e:
                 print(str(e))
+
+
+# 定义一个检测ndarray中nan值的函数, 如果发现连续的5个以上的nan值，则返回True，否则返回False
+# def has_consecutive_nan(array):
+#     """
+#     :param array: 传入的信号
+#     :return 缺失值出现的位置，以及是否需要插值
+#     """
+#     if len(array.shape) == 1:
+#         array = array.reshape(1, -1)
+#     else:
+#         if array.shape[0] > array.shape[1]:
+#             array = array.T
+#
+#     num_sensors = array.shape[0]  # 传感器的数量
+#     num_nan_continuous = 0
+#     interpolation_necessity = False
+#
+#     nan_occurs_index = []
+#
+#     for i in range(num_sensors):
+#         tmp_array = array[i]
+#         # 获取数组的长度
+#         length = tmp_array.shape[0]
+#         # 遍历数组中的每个元素
+#         for j in range(length):
+#             # 如果当前元素是nan，则判断下一个元素是否也是nan
+#             # if np.isnan(tmp_array[j]):
+#             #     # 如果下一个元素也是nan，则判断下一个元素是否也是nan
+#             #     if j + 1 < length and np.isnan(tmp_array[j + 1]):
+#             #         if j + 2 < length and np.isnan(tmp_array[j + 2]):
+#             #             if j + 3 < length and np.isnan(tmp_array[j + 3]):
+#             #                 if j + 4 < length and np.isnan(tmp_array[j + 4]):
+#             #                        return True
+#             if np.isnan(tmp_array[j]):
+#                 num_nan_continuous += 1
+#                 nan_occurs_index.append(j)
+#                 if num_nan_continuous >= 10:
+#                     interpolation_necessity = True
+#             else:
+#                 num_nan_continuous = 0
+#     return nan_occurs_index, interpolation_necessity
