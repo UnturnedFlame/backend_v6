@@ -982,7 +982,7 @@ user_recv_data_dir = 'app1/recv_file/examples'
 
 
 # 通过服务器中保存的用户数据文件运行
-def run_with_datafile_on_cloud(request):
+def run_model_with_datafile_on_cloud(request):
     if request.method == 'POST':
         # print("收到运行模型的请求")
         token = extract_jwt_from_request(request)
@@ -1106,6 +1106,10 @@ def run_with_datafile_on_cloud(request):
                     # new_subprocess.join()
                     # results: dict = queue.get()
                     demo_app.start(datafile=file_path)
+                    error = demo_app.error
+                    print(f"error : {error}")
+                    if error:
+                        return JsonResponse({'message': error, 'code': 400})
                     results = demo_app.results_to_response
                     # print(f"results: {results}")
                     for module in schedule:

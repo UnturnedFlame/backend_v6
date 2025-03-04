@@ -3,6 +3,7 @@ import os.path
 
 import numpy as np
 import pandas as pd
+from enum import Enum
 from sklearn.preprocessing import StandardScaler
 from sympy import false
 
@@ -45,6 +46,11 @@ def add_user_dir(datastream: dict):
         split_path = datastream['filepath'].split('/')
         datastream['user_dir'] = split_path[-2] + '/' + split_path[-1].split('.')[0]
 
+# 自定义枚举类，用于返回模块运行状态
+class ModuleStatus(Enum):
+    finished = 0
+    lack_feature_for_prediction = 1  # 缺失特征
+
 
 class Reactor:
     def __init__(self, schedule, algorithm_dict, params_dict, multiple_sensor):
@@ -59,6 +65,7 @@ class Reactor:
         self.multiple_sensor = multiple_sensor
         self.schedule = schedule
         self.current_module = ''
+        self.error = None
         # 存储前端返回的需要运行的模型的信息，包括用到的模块，模块的具体信息，算法的使用参数等
         self.module_configuration = {module: {'usage': False, 'algorithm': '', 'params': {}, 'result': {},
                                               'introduction': ''} for module in
@@ -78,6 +85,8 @@ class Reactor:
                                      '小波变换', '特征选择', '故障诊断', '故障预测',
                                      '无量纲化', '异常值检测']}
         # 运行过程中各个模块之间数据交换的格式，类似于数据流，每次传递数据时包含上一个模块的运行结果
+        # 其中，filepath为输入文件路径，raw_data为原始数据，extracted_features为提取的特征，filename为输入文件名，
+        # user_dir为用户目录，features_name为提取特征名，diagnosis_result为故障诊断结果，features_group_by_sensor为根据传感器分组的特征
         self.data_stream = {'filepath': None, 'raw_data': None, 'extracted_features': None,
                             'filename': None, 'user_dir': None, 'features_name': None, 'diagnosis_result': None,
                             'features_group_by_sensor': None, 'multiple_sensor': multiple_sensor}
@@ -493,6 +502,8 @@ class Reactor:
 
         features_name = features_with_name['features_name']  # 特征名
 
+        print(f"feature_extraction features name: {features_name}")
+
         features_extracted_group_by_sensor = features_with_name['features_extracted_group_by_sensor']  # 各个传感器的特征
         for sensor, features in features_extracted_group_by_sensor.items():
             features_array = np.array(features)
@@ -506,28 +517,22 @@ class Reactor:
                 featuresToDrawLineChart[sensor][feature_name] = features_array[:, i].flatten().tolist()
             # print(f'sensor: {sensor}, features: {featuresToDrawLineChart[sensor]}')
 
-        # for col in features_extracted.columns:
-        #     data_col = features_extracted[[col]].values
-        #     data_normalized = standard_scaler.fit_transform(data_col)
-        #     featuresToDrawLineChart[col] = data_normalized.flatten().tolist()
-        # print(f'featuresToDrawLineChart: {featuresToDrawLineChart}')
         self.results_to_response['特征提取']['featuresToDrawLineChart'] = featuresToDrawLineChart
 
-        # print(f'features_extracted: {features_extracted}')
-        print(f'1_data: {data.shape}')
-        # if len(data.flatten()) <= 2048:
-        #     data = data.reshape(1, -1)
-        # elif data.shape[0] == 2048:
+        # 确保信号的形状为(n, m)，其中n为信号的长度，m为传感器数量，否则进行转置
+        if len(data.shape) == 1:
+            data = data.reshape(1, -1)
         if data.shape[0] < data.shape[1]:
             data = data.T
-        print(f'2_data: {data.shape}')
+
+        # print(f'2_data: {data.shape}')
         num_sensors = data.shape[1]
         raw_data = [data[:, i].flatten().tolist() for i in range(num_sensors)]
         self.results_to_response['特征提取']['raw_data'] = raw_data
         print(f"raw_data: {len(self.results_to_response['特征提取']['raw_data'])}")
         self.results_to_response['特征提取']['num_examples'] = num_examples
         self.construct_data_stream(filepath=filepath, raw_data=data, extracted_features=features_extracted,
-                                   filename=filename, features_name=features, multiple_sensor=multiple_sensor,
+                                   filename=filename, features_name=features_name, multiple_sensor=multiple_sensor,
                                    features_group_by_sensor=features_with_name)
 
         return self.data_stream
@@ -650,34 +655,46 @@ class Reactor:
         threshold = self.module_configuration['特征选择']['params']['threshold' + str(rule)]
         user_dir = data_with_selected_features.get('user_dir')
 
+        features_name_extracted = self.data_stream.get('features_name')  # 提取的特征名称
+        # features_name_list = []
+        # for _, features_name in features_name_extracted.items():
+        #     features_name_list.extend(features_name)
+
+        print(f"features_selection features name list: {features_name_extracted}")
+
         if '_multiple' in use_algorithm:
             multiple_sensor = True
 
         if 'feature_imp' in use_algorithm:
             # 树模型的特征选择
-            selection_figure_path, features, corr_matrix_heatmap = feature_imp(multiple_sensor, rule, threshold,
-                                                                               user_dir=user_dir)
+            selection_figure_path, features_selected, corr_matrix_heatmap, computed_values, all_features = feature_imp(multiple_sensor, rule, threshold,
+                                                                               user_dir=user_dir, feature_list=features_name_extracted)
         elif 'mutual_information_importance' in use_algorithm:
             # 互信息重要性的特征选择
-            selection_figure_path, features, corr_matrix_heatmap = mutual_information_importance(multiple_sensor,
+            selection_figure_path, features_selected, corr_matrix_heatmap, computed_values, all_features = mutual_information_importance(multiple_sensor,
                                                                                                  rule, threshold,
-                                                                                                 user_dir=user_dir)
+                                                                                                 user_dir=user_dir,
+                                                                                                 feature_list=features_name_extracted)
         else:
             # 相关系数重要性的特征选择
-            selection_figure_path, features, corr_matrix_heatmap = correlation_coefficient_importance(multiple_sensor,
+            selection_figure_path, features_selected, corr_matrix_heatmap, computed_values, all_features = correlation_coefficient_importance(multiple_sensor,
                                                                                                       rule, threshold,
-                                                                                                      user_dir=user_dir)
+                                                                                                      user_dir=user_dir,
+                                                                                                      feature_list=features_name_extracted)
 
         # 需要返回给前端的结果
         self.results_to_response['特征选择']['figure_Base64'] = selection_figure_path
         self.results_to_response['特征选择']['heatmap_Base64'] = corr_matrix_heatmap
-        self.results_to_response['特征选择']['selected_features'] = features
+        self.results_to_response['特征选择']['selected_features'] = features_selected
+        self.results_to_response['特征选择']['computed_values'] = computed_values if not isinstance(computed_values, np.ndarray) else computed_values.tolist()
+        self.results_to_response['特征选择']['all_features'] = all_features if not isinstance(all_features, np.ndarray) else all_features.tolist()
+        self.results_to_response['特征选择']['threshold'] =  f'rule{rule}_{threshold}' # 阈值规则 + _ + 阈值
         if rule == 1:
             self.results_to_response['特征选择']['rule'] = f'选择重要性大于{threshold}的特征'
         else:
             self.results_to_response['特征选择'][
                 'rule'] = f'所选特征的重要性的总和占所有特征的重要性比例不小于{threshold}（所有特征重要性的总和占比为1），优先选择重要性高的特征'
-        self.construct_data_stream(features_name=features)
+        self.construct_data_stream(features_name=features_selected)
 
         return self.data_stream
 
@@ -788,7 +805,7 @@ class Reactor:
             if diagnosis_result == 0:
                 self.module_configuration['故障诊断']['result'][
                     '诊断结果'] = (
-                    f'### 由输入的振动信号，共截取到{num_examples}个样本，根据对应故障诊断模型预测，其中{num_has_fault}个样本存在故障，未达到样本总数的70%，由此判断该部件<span '
+                    f'### 由输入的振动信号，共截取到{num_examples}个长为2048的样本，根据对应故障诊断模型预测，其中{num_has_fault}个样本存在故障，未达到样本总数的70%，由此判断该部件<span '
                     f'style=\"color: red\">无故障</span>')
                 # self.results_to_response['故障诊断']['diagnosis_result'] = '### 由输入的振动信号，根据故障诊断算法得知该部件<span
                 # style=\"color: red\">无故障</span>'
@@ -807,10 +824,24 @@ class Reactor:
             self.results_to_response['故障诊断']['complementary_summary'] = complementary_summary
             self.results_to_response['故障诊断']['resultText'] = self.module_configuration['故障诊断']['result'][
                 '诊断结果']
+            # print(f'indicator: {indicator}')
+            print(f"features name: {self.data_stream['features_name']}")
+            if self.data_stream['features_group_by_sensor'] is not None:
+                statistics_of_features = self.data_stream['features_group_by_sensor']['statistics_of_features']
+                statistics_table_data = []
+                for feature_name, feature_statistics in statistics_of_features.items():
+                    if feature_name not in self.data_stream['features_name']:
+                        continue
+                    tmp = feature_statistics
+                    tmp['feature_name'] = feature_name
+                    statistics_table_data.append(tmp)
+                self.results_to_response['故障诊断']['statistics_of_features'] = statistics_table_data
+                print(f'---ce statistics_of_features: {statistics_table_data}')
         else:
             # 程序运行出错，打印错误信息
             print('error: ', x_axis)
-            return ''
+            # ModuleStatus.lack_feature_for_prediction.tip = "程序运行出错，所选特征无法满足模型推理需要，建议提取所有时域以及频域的特征，或者重新选择特征"
+            return 'error__lack_feature_for_prediction__'
         if figure_path:
             self.results_to_response['故障诊断']['figure_Base64'] = figure_path
         return self.data_stream
@@ -884,6 +915,14 @@ class Reactor:
         for module in self.schedule:
             if outcome == '':
                 break
+            if 'error__' in outcome:
+                if 'lack_feature_for_prediction' in outcome:
+                    self.error = '程序运行出错，所选特征无法满足模型预测需要，建议提取所有时域以及频域的特征，或者重新选择特征！'
+                else:
+                    self.error = '程序运行出错'
+                break
+
+
             if module == '插值处理':
                 if file_type == 'csv':
                     # 对csv形式存储的数据进行的插值
