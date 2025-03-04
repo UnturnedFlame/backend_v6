@@ -46,26 +46,25 @@ def correlation_matrix_plot(features, figure_save_path, multiple_sensor=False):
 
 
 # 使用树模型的特征选择
-def feature_imp(multiple_sensor=False, rule=1, threshold=0, user_dir=None):
+def feature_imp(multiple_sensor=False, rule=1, threshold=0, user_dir=None, feature_list=None):
     """
     模型相关的特征选择
     :param user_dir: 结果图像的保存目录
     :param threshold: 特征选择依据规则的设定阈值
     :param rule: 特征选择的依据规则
     :param multiple_sensor: 是否为多传感器数据
+    :param feature_list: 特征提取特征名称
     :return: 特征选择结果图像的存放路径
     """
     if not multiple_sensor:
         data = pd.read_csv(file_path)
     else:
         data = pd.read_csv(file_path_2)
-    # 阈值范围调整
-    if rule == 1:
-        threshold /= 10.0
+
     print(f'feature_imp threshold: {threshold}')
     all_columns = data.columns
     empty_columns = [col for col in all_columns if ('谱峭度的偏度' in col or '谱峭度的标准差' in col)]
-
+    features_list_filtered = [feature for feature in feature_list if (feature != '谱峭度的偏度' and feature != '谱峭度的标准差')]
     # 删除全空的列
     data_cleaned = data.drop(columns=empty_columns)
     # 分离特征和标签
@@ -76,6 +75,12 @@ def feature_imp(multiple_sensor=False, rule=1, threshold=0, user_dir=None):
     imputer = SimpleImputer(strategy='mean')
     X_imputed_cleaned = imputer.fit_transform(X_cleaned)
 
+    # 只选择特征提取的特征
+    if features_list_filtered is not None:
+        # X_cleaned = X_cleaned[features_list_filtered]
+        print(f"X_cleaned: {X_cleaned}")
+        print(f'feature_imp feature_list: {features_list_filtered}')
+
     # 训练随机森林分类器
     clf = RandomForestClassifier(n_estimators=100, random_state=42)
     clf.fit(X_imputed_cleaned, y_cleaned)
@@ -84,6 +89,13 @@ def feature_imp(multiple_sensor=False, rule=1, threshold=0, user_dir=None):
     importances_cleaned = clf.feature_importances_
     indices_cleaned = np.argsort(importances_cleaned)[::-1]
 
+    # 树模型的特征选择规则1需要调整系数尺度
+    if rule == 1:
+        # 使相关系数整体乘以10
+        importances_cleaned = importances_cleaned * 10
+
+    print(f"feature_selection indices_cleaned: {indices_cleaned}")
+
     num_features_selected = 0
     features_selected = {}
 
@@ -91,6 +103,17 @@ def feature_imp(multiple_sensor=False, rule=1, threshold=0, user_dir=None):
     if rule == 1:
         # 规则一，选择特征的重要性大于阈值threshold的特征
         for i in range(len(indices_cleaned)):
+            # 单传感器与多传感器的特征名称规则组成不同
+            if not multiple_sensor:
+                # 单传感器
+                if features_list_filtered is not None and X_cleaned.columns[
+                    indices_cleaned[i]] not in features_list_filtered:
+                    continue
+            else:
+                # 多传感器
+                if features_list_filtered is not None and X_cleaned.columns[
+                    indices_cleaned[i]].split('_')[-1] not in features_list_filtered:
+                    continue
             if importances_cleaned[indices_cleaned[i]] > threshold:
                 features_selected[X_cleaned.columns[indices_cleaned[i]]] = importances_cleaned[indices_cleaned[i]]
                 num_features_selected += 1
@@ -101,7 +124,19 @@ def feature_imp(multiple_sensor=False, rule=1, threshold=0, user_dir=None):
         importance_summed = np.sum(importances_cleaned).item()
         print(f'重要性的总和{importance_summed}')
         for i in range(len(indices_cleaned)):
+            # 单传感器与多传感器的特征名称规则组成不同
+            if not multiple_sensor:
+                # 单传感器
+                if features_list_filtered is not None and X_cleaned.columns[
+                    indices_cleaned[i]] not in features_list_filtered:
+                    continue
+            else:
+                # 多传感器
+                if features_list_filtered is not None and X_cleaned.columns[
+                    indices_cleaned[i]].split('_')[-1] not in features_list_filtered:
+                    continue
             sum_importance += importances_cleaned[indices_cleaned[i]]
+            # 由高到低选择特征直到所选的特征系数总和占比超过阈值threshold
             if sum_importance / importance_summed <= threshold:
                 features_selected[X_cleaned.columns[indices_cleaned[i]]] = importances_cleaned[indices_cleaned[i]]
                 num_features_selected += 1
@@ -116,22 +151,68 @@ def feature_imp(multiple_sensor=False, rule=1, threshold=0, user_dir=None):
     plt.figure(figsize=(20, 10))
 
     plt.title("树模型特征选择", fontsize=20)
+
+    # 仅选择特诊提取模块选择提取的特征
+    column_names = X_cleaned.columns
+    index_values = X_cleaned.index
+
+    # print(f"feature selection column_names: {column_names}")
+
+    index_filtered = []
+
+    num_features = 0
+    for feature_name, index in zip(column_names, index_values):
+        if not multiple_sensor:
+            if feature_name in features_list_filtered:
+                index_filtered.append(index)
+                num_features += 1
+        else:
+            if feature_name.split('_')[-1] in features_list_filtered:
+                index_filtered.append(index)
+                num_features += 1
+
+    index_filtered_sorted = []
+    for index in indices_cleaned:
+        if index in index_filtered:
+            index_filtered_sorted.append(index)
+
     if not multiple_sensor:
-        bars = plt.bar(range(len(importances_cleaned)), importances_cleaned[indices_cleaned], align="center")
-        plt.xticks(range(len(importances_cleaned)), X_cleaned.columns[indices_cleaned], rotation=90, fontsize=12)
+        # bars = plt.bar(range(len(importances_cleaned)), importances_cleaned[indices_cleaned], align="center")
+        # plt.xticks(range(len(importances_cleaned)), X_cleaned.columns[indices_cleaned], rotation=90, fontsize=12)
+        bars = plt.bar(range(num_features), importances_cleaned[index_filtered_sorted], align="center")
+        plt.xticks(range(num_features), X_cleaned.columns[index_filtered_sorted], rotation=90, fontsize=12)
+
+        features_to_display = X_cleaned.columns[index_filtered_sorted].tolist()
+        values_to_display = importances_cleaned[index_filtered_sorted]
     else:
-        if len(X_cleaned.columns) > 30:
+        # if len(X_cleaned.columns) > 30:
+        #     end_of_view = 30
+        # else:
+        #     end_of_view = len(X_cleaned.columns)
+        # 限制多传感器数据时，只绘制前30个特征
+        if num_features > 30:
             end_of_view = 30
         else:
-            end_of_view = len(X_cleaned.columns)
-        bars = plt.bar(range(end_of_view), importances_cleaned[indices_cleaned][0:end_of_view], align="center")
-        plt.xticks(range(end_of_view), X_cleaned.columns[indices_cleaned][0:end_of_view], rotation=90, fontsize=12)
+            end_of_view = num_features
+        print(f"feature selection index_filtered_sorted: {index_filtered_sorted}")
+        # bars = plt.bar(range(end_of_view), importances_cleaned[indices_cleaned][0:end_of_view], align="center")
+        # plt.xticks(range(end_of_view), X_cleaned.columns[indices_cleaned][0:end_of_view], rotation=90, fontsize=12)
+        bars = plt.bar(range(end_of_view), importances_cleaned[index_filtered_sorted][0:end_of_view], align="center")
+        plt.xticks(range(end_of_view), X_cleaned.columns[index_filtered_sorted][0:end_of_view], rotation=90, fontsize=12)
+
+        features_to_display = X_cleaned.columns[index_filtered_sorted][0:end_of_view].tolist()
+        values_to_display = importances_cleaned[index_filtered_sorted][0:end_of_view]
+
+    print(f"feature selection features_to_display: {features_to_display}")
+    print(f"feature selection values_to_display: {values_to_display}")
 
     # 使用不同颜色区分被选择的特征
     for i in range(num_features_selected):
         bars[i].set_color('r')
-    features_selected = {X_cleaned.columns[indices_cleaned[i]]: importances_cleaned[indices_cleaned[i]]
+    features_selected = {X_cleaned.columns[index_filtered_sorted[i]]: importances_cleaned[index_filtered_sorted[i]]
                          for i in range(num_features_selected)}
+
+
     # plt.xticks(range(len(importances_cleaned)), X_cleaned.columns[indices_cleaned], rotation=90, fontsize=20)
     # plt.xlim([-1, len(importances_cleaned)])
     # plt.tight_layout()
@@ -149,11 +230,11 @@ def feature_imp(multiple_sensor=False, rule=1, threshold=0, user_dir=None):
     correlation_matrix_plot(list(features_selected.keys()), corr_matrix_plot_path, multiple_sensor=multiple_sensor)
     plt.close()
 
-    return selection_figure_save_path, list(features_selected.keys()), corr_matrix_plot_path
+    return selection_figure_save_path, list(features_selected.keys()), corr_matrix_plot_path, values_to_display, features_to_display
 
 
 # 绘制特征选择结果图像
-def plot_importance(importance_dict, title, multiple_sensor=False, rule=1, threshold=0, user_dir=None):
+def plot_importance(importance_dict, title, multiple_sensor=False, rule=1, threshold=0, user_dir=None, feature_list=None):
     """
     根据计算得到的所有特征的重要性以及对应的规则及阈值进行特征选择，然后绘制特征选择结果图像
     :param user_dir: 结果的保存目录
@@ -162,11 +243,28 @@ def plot_importance(importance_dict, title, multiple_sensor=False, rule=1, thres
     :param importance_dict: 重要性字典
     :param title: 使用的特征选择方法
     :param multiple_sensor: 是否为多传感器数据
+    :param feature_list: 提取到的特征名称
     :return: 绘制图像的存放路径
     """
     sorted_importance = sorted(importance_dict.items(), key=lambda item: item[1], reverse=True)
-    features = [item[0] for item in sorted_importance]
-    scores = [item[1] for item in sorted_importance]
+
+    features = []
+    scores = []
+
+    for item in sorted_importance:
+        if not multiple_sensor:
+            if item[0] in feature_list:
+                features.append(item[0])
+                scores.append(item[1])
+        else:
+            if item[0].split('_')[-1] in feature_list:
+                features.append(item[0])
+                scores.append(item[1])
+
+    # features = [item[0] for item in sorted_importance]
+    # scores = [item[1] for item in sorted_importance]
+
+
 
     features_selected = []  # 选择的特征名称
     num_features_selected = 0  # 选择的特征数量
@@ -227,16 +325,17 @@ def plot_importance(importance_dict, title, multiple_sensor=False, rule=1, thres
     plt.savefig(figure_save_path)
     plt.close()
 
-    return figure_save_path, features_selected
+    return figure_save_path, features_selected, scores, features
 
 
-def mutual_information_importance(multiple_sensor=False, rule=1, threshold=0, user_dir=None):
+def mutual_information_importance(multiple_sensor=False, rule=1, threshold=0, user_dir=None, feature_list=None):
     """
     互信息重要性的特征选择
     :param user_dir: 结果的保存目录
     :param threshold: 特征选择依据的规则的阈值
     :param rule: 特征选择依据的规则
     :param multiple_sensor: 是否为多传感器数据
+    :param feature_list: 提取到的特征名称
     :return: 特征选择的结果图像的存放路径
     """
     if not multiple_sensor:
@@ -257,22 +356,23 @@ def mutual_information_importance(multiple_sensor=False, rule=1, threshold=0, us
     mi_importance = {X_cleaned.columns[i]: mi[i] for i in range(len(mi))}
 
     # 可视化互信息重要性
-    figure_path, features = plot_importance(mi_importance, "互信息重要性特征选择", multiple_sensor=multiple_sensor, rule=rule, threshold=threshold, user_dir=user_dir)
+    figure_path, features, values_to_display, features_to_display = plot_importance(mi_importance, "互信息重要性特征选择", multiple_sensor=multiple_sensor, rule=rule, threshold=threshold, user_dir=user_dir, feature_list=feature_list)
     corr_matrix_heatmap_path = save_path + '/' + 'mutual_information_importance' + '/' + user_dir
     if not os.path.exists(corr_matrix_heatmap_path):
         os.makedirs(corr_matrix_heatmap_path)
     corr_matrix_heatmap_path += '/' + 'corr_matrix_heatmap.png'
     correlation_matrix_plot(features, corr_matrix_heatmap_path, multiple_sensor=multiple_sensor)
-    return figure_path, features, corr_matrix_heatmap_path
+    return figure_path, features, corr_matrix_heatmap_path, values_to_display, features_to_display
 
 
-def correlation_coefficient_importance(multiple_sensor=False, rule=1, threshold=0, user_dir=None):
+def correlation_coefficient_importance(multiple_sensor=False, rule=1, threshold=0, user_dir=None, feature_list=None):
     """
     相关系数重要性的特征选择
     :param user_dir: 结果的保存目录
     :param threshold: 特征选择依据的规则的阈值
     :param rule: 特征选择依据的规则
     :param multiple_sensor: 是否为多传感器数据
+    :param feature_list: 提取到的特征名称
     :return: 特征选择的结果图像的存放路径
     """
     if not multiple_sensor:
@@ -294,11 +394,11 @@ def correlation_coefficient_importance(multiple_sensor=False, rule=1, threshold=
     cor_importance = {X_cleaned.columns[i]: abs(correlations[i]) for i in range(len(correlations))}
 
     # 可视化相关系数重要性
-    figure_path, features = plot_importance(cor_importance, "相关系数重要性特征选择", multiple_sensor=multiple_sensor, rule=rule, threshold=threshold, user_dir=user_dir)
+    figure_path, features, values_to_display, features_to_display = plot_importance(cor_importance, "相关系数重要性特征选择", multiple_sensor=multiple_sensor, rule=rule, threshold=threshold, user_dir=user_dir, feature_list=feature_list)
     corr_matrix_heatmap_path = save_path + '/' + 'correlation_coefficient_importance' + '/' + user_dir
     if not os.path.exists(corr_matrix_heatmap_path):
         os.makedirs(corr_matrix_heatmap_path)
     corr_matrix_heatmap_path += '/' + 'corr_matrix_heatmap.png'
     correlation_matrix_plot(features, corr_matrix_heatmap_path, multiple_sensor=multiple_sensor)
 
-    return figure_path, features, corr_matrix_heatmap_path
+    return figure_path, features, corr_matrix_heatmap_path, values_to_display, features_to_display

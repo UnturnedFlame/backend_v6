@@ -9,6 +9,7 @@ import pywt
 import joblib
 import torch
 from matplotlib.font_manager import FontProperties
+from pandas.core.interchange.dataframe_protocol import DataFrame
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, MaxAbsScaler, RobustScaler
 from scipy.interpolate import PchipInterpolator, interp1d, lagrange, CubicSpline
 from scipy.io import savemat
@@ -1449,6 +1450,38 @@ def extract_features_for_three_dims(datafile, features_to_extract):
     return output_file
 
 
+# 计算对于特征的统计量
+# 计算每个特征的最大值、最小值、均值、方差、最大值与最小值之差
+def compute_statistics_of_features(input_features: pd.DataFrame):
+
+    statistics_of_features = {feature_name: {'max': 0, 'min': 0, 'mean': 0, 'variance': 0, 'max_subtract_min': 0}
+                              for feature_name in input_features.columns}
+
+    copied_df = input_features.copy()
+
+    # 对每一行特征进行标准化操作
+    # scaler = StandardScaler()
+    # num_row = copied_df.shape[0]
+    # for i in range(num_row):
+    #     print(f'{i}: {copied_df.iloc[i, :]}')
+    #     # print(f'before ---- {i}: {copied_df.iloc[i, :].to_numpy().reshape(1, -1)}')
+    #     copied_df.iloc[i, :] = scaler.fit_transform(copied_df.iloc[i, :].to_numpy().reshape(1, -1))
+    #
+    # print(f'-----------copied_df---------: {copied_df}')
+
+
+
+    # 计算每列特征的最大值、最小值、均值、方差
+    for feature_name in input_features.columns:
+        statistics_of_features[feature_name]['max'] = copied_df.loc[:, feature_name].max()
+        statistics_of_features[feature_name]['min'] = copied_df.loc[:, feature_name].min()
+        statistics_of_features[feature_name]['mean'] = copied_df.loc[:, feature_name].mean()
+        statistics_of_features[feature_name]['variance'] = copied_df.loc[:, feature_name].var()
+        statistics_of_features[feature_name]['max_subtracts_min'] = statistics_of_features[feature_name]['max'] - statistics_of_features[feature_name]['min']
+
+    return statistics_of_features
+
+
 def extract_signal_features(input_data: np.ndarray, features_to_extract, filename=None, save=False, user_dir=None):
     """
     对输入的一维信号进行人工时域和频域特征的提取
@@ -1497,11 +1530,13 @@ def extract_signal_features(input_data: np.ndarray, features_to_extract, filenam
             for domain, features in features_to_extract.items():
                 if features:
                     if domain == 'time_domain':
+                        # 提取时域特征
                         time_domain_features = time_domain_extraction(split_data[i, :], features)
                         time_domain_values = [list(time_domain_features.values())]
                         single_feature += list(time_domain_features.values())
                         time_domain_features = pd.DataFrame(data=time_domain_values, columns=features)
                     else:
+                        # 提取频域特征
                         frequency_domain_features = frequency_domain_extraction(split_data[i, :], features)
                         frequency_domain_values = [list(frequency_domain_features.values())]
                         single_feature += list(frequency_domain_features.values())
@@ -1537,8 +1572,11 @@ def extract_signal_features(input_data: np.ndarray, features_to_extract, filenam
 
             print(f"features_single_sensor_extracted: {all_example_features_extracted}")
             all_example_features_extracted.to_csv(output_file, index=False)
+            statistics_of_features = compute_statistics_of_features(all_example_features_extracted)
+
+            print(f"statistics of features: {statistics_of_features}")
             return output_file, {'features_extracted_group_by_sensor': all_example_features_extracted_group_by_sensor,
-                                 'features_name': all_features}, num_example
+                                 'features_name': all_features, 'statistics_of_features': statistics_of_features}, num_example
         else:
             # 作为多传感器数据中一个传感器信号的特征提取结果返回
             return all_example_features_extracted.iloc[0].tolist()
@@ -1610,6 +1648,10 @@ def extract_features_with_multiple_sensors(input_data: np.ndarray, features_to_e
                 #     print(f'extracted_features_group_by_sensor: { len(extracted_features_group_by_sensor[sensor_name])}')
             # combined_features.append(1)
             combined_features_df.loc[frame_idx] = combined_features
+
+        # 计算每个特征的统计量
+        statistics_of_features = compute_statistics_of_features(combined_features_df)
+        print(f"statistics of features: {statistics_of_features}")
         # print(f'combined_features_df: {combined_features_df.shape}')
         out_filename = filename + '.csv'
         output_file_dir = 'app1/module_management/algorithms/functions/preprocessing_results/feature_extraction/time_frequency_domain/' + user_dir
@@ -1620,7 +1662,7 @@ def extract_features_with_multiple_sensors(input_data: np.ndarray, features_to_e
         combined_features_df.to_csv(output_file, index=False)
 
         return output_file, {'features_extracted_group_by_sensor': extracted_features_group_by_sensor,
-                             'features_name': all_features}, num_frames
+                             'features_name': all_features, 'statistics_of_features': statistics_of_features}, num_frames
     except Exception as e:
         print('多传感器特征提取出错：', str(e))
         return None, {}
