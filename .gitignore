@@ -4,3 +4,11 @@ app1/module_management/algorithms/models/health_evaluation/model_2.pkl
 app1/module_management/algorithms/models/checkpoints/lightweight_cnn_conformer/augepoch=22_cosine_eer=0.65_as_norm(0.61).ckpt
 app1/module_management/algorithms/models/checkpoints/sepformer.pth.tar
 app1/module_management/algorithms/models/checkpoints/conformer.pth.tar
+app1/reports
+app1/module_management/algorithms/functions/raw_data
+app1/module_management/algorithms/functions/datas
+app1/module_management/algorithms/functions/speech_processing_results
+app1/module_management/algorithms/functions/preprocessing_results
+app1/module_management/algorithms/functions/health_evaluation_results
+app1/module_management/algorithms/functions/feature_selection_results
+app1/module_management/algorithms/functions/fault_diagnosis
