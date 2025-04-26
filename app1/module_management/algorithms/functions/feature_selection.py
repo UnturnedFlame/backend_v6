@@ -46,7 +46,7 @@ def correlation_matrix_plot(features, figure_save_path, multiple_sensor=False):
 
 
 # 使用树模型的特征选择
-def feature_imp(multiple_sensor=False, rule=1, threshold=0, user_dir=None, feature_list=None):
+def decision_tree_feature_imp(multiple_sensor=False, rule=1, threshold=0, user_dir=None, feature_list=None):
     """
     模型相关的特征选择
     :param user_dir: 结果图像的保存目录

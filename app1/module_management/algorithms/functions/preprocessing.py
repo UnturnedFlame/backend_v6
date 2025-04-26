@@ -1469,14 +1469,20 @@ def compute_statistics_of_features(input_features: pd.DataFrame):
     #
     # print(f'-----------copied_df---------: {copied_df}')
 
-
+    standard_scaler = StandardScaler()
 
     # 计算每列特征的最大值、最小值、均值、方差
     for feature_name in input_features.columns:
-        statistics_of_features[feature_name]['max'] = copied_df.loc[:, feature_name].max()
-        statistics_of_features[feature_name]['min'] = copied_df.loc[:, feature_name].min()
-        statistics_of_features[feature_name]['mean'] = copied_df.loc[:, feature_name].mean()
-        statistics_of_features[feature_name]['variance'] = copied_df.loc[:, feature_name].var()
+        standardized_feature = standard_scaler.fit_transform(copied_df.loc[:, feature_name].to_numpy().reshape(-1, 1)).flatten()
+        # standardized_feature = copied_df.loc[:, feature_name]
+        # statistics_of_features[feature_name]['max'] = copied_df.loc[:, feature_name].max()
+        # statistics_of_features[feature_name]['min'] = copied_df.loc[:, feature_name].min()
+        # statistics_of_features[feature_name]['mean'] = copied_df.loc[:, feature_name].mean()
+        # statistics_of_features[feature_name]['variance'] = copied_df.loc[:, feature_name].var()
+        statistics_of_features[feature_name]['max'] = standardized_feature.max()
+        statistics_of_features[feature_name]['min'] = standardized_feature.min()
+        statistics_of_features[feature_name]['mean'] = standardized_feature.mean()
+        statistics_of_features[feature_name]['variance'] = standardized_feature.var()
         statistics_of_features[feature_name]['max_subtracts_min'] = statistics_of_features[feature_name]['max'] - statistics_of_features[feature_name]['min']
 
     return statistics_of_features

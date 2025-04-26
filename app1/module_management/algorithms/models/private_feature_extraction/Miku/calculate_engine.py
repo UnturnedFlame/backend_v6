@@ -7,7 +7,7 @@ import pandas as pd
 from app1.module_management.algorithms.functions.fault_diagnosis import diagnose_with_svc_model, \
     diagnose_with_random_forest_model, time_regression, \
     diagnose_with_gru_model, diagnose_with_lstm_model
-from app1.module_management.algorithms.functions.feature_selection import feature_imp, mutual_information_importance, \
+from app1.module_management.algorithms.functions.feature_selection import decision_tree_feature_imp, mutual_information_importance, \
     correlation_coefficient_importance
 from app1.module_management.algorithms.functions.health_evaluation import model_eval, model_eval_multiple_sensor
 from app1.module_management.algorithms.functions.load_data import load_data
@@ -313,7 +313,7 @@ class Reactor:
         # else:
         #     figure_path, features = correlation_coefficient_importance(multiple_sensor)
         if 'feature_imp' in use_algorithm:
-            figure_path, features = feature_imp(multiple_sensor, int(num_features))
+            figure_path, features = decision_tree_feature_imp(multiple_sensor, int(num_features))
         elif 'mutual_information_importance' in use_algorithm:
             figure_path, features = mutual_information_importance(multiple_sensor, int(num_features))
         else:

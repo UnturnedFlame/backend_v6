@@ -23,10 +23,12 @@ class SavedModelFromUser(models.Model):
 class UserModel(models.Model):
     author = models.ForeignKey(to=settings.AUTH_USER_MODEL, on_delete=models.CASCADE, verbose_name="模型建立者", null=True, default=None)
     model_name = models.CharField(verbose_name="模型名称", max_length=32, null=False, blank=False, default='unknown')
-    model_info = models.JSONField(verbose_name="模型信息", null=False, blank=False, default=None)
+    model_info = models.JSONField(verbose_name="模型信息（包含模型在前端画布中的渲染参数）", null=False, blank=False, default=None)
     model_description = models.TextField(verbose_name="模型描述", null=False, blank=False, default='无')
     # is_publish = models.BooleanField(verbose_name="是否公开", null=False, blank=False, default=False)
     is_published = models.CharField(verbose_name="发布状态", max_length=16, null=False, blank=False, default='未发布')
+    report_path = models.CharField(max_length=255, blank=True, null=True)
+    model_config = models.JSONField(verbose_name="模型配置信息（包含模块执行顺序以及参数等）", null=False, blank=False, default=None)
     # component_tree = models.ForeignKey(ComponentTree, on_delete=models.CASCADE)
     # parent_node = models.ForeignKey(ComponentNode, on_delete=models.CASCADE)
     # relationship = models.ForeignKey(to=relation, on_delete=models.CASCADE, verbose_name="")
@@ -44,23 +46,29 @@ class PublishModelsApplication(models.Model):
     status = models.CharField(verbose_name="申请状态", max_length=16, null=False, blank=False, default='未处理')
     auditor = models.ForeignKey(to=settings.AUTH_USER_MODEL, on_delete=models.CASCADE, verbose_name="审批人", null=True, default=None, related_name='auditor_publish_models_applications')
     audition_time = models.DateTimeField(verbose_name="审批时间", null=True, blank=True)
+    report_path = models.CharField(max_length=255, blank=True, null=True)
 
 
 # 用户所有的数据，以文件路径的形式保存
 class SavedDatasetsFromUser(models.Model):
     owner = models.ForeignKey(to=settings.AUTH_USER_MODEL, on_delete=models.CASCADE, verbose_name="数据所有者")
-    dataset_name = models.CharField(verbose_name="数据文件名", max_length=32, null=False, blank=False, default='')
-    file_path = models.CharField(verbose_name="文件存放路径", max_length=255, null=False, blank=False, default='')
-    description = models.TextField(verbose_name="文件描述", null=False, blank=False, default='无')
+    dataset_name = models.CharField(verbose_name="数据集名称", max_length=64, null=False, blank=False, default='')
+    file_path = models.CharField(verbose_name="数据集文件存放路径", max_length=255, null=False, blank=False, default='')
+    description = models.TextField(verbose_name="数据集描述", null=False, blank=False, default='无')
     multiple_sensors = models.BooleanField(verbose_name="是否为多传感器数据", null=False, blank=False, default=False)
     publicity = models.BooleanField(verbose_name="是否公开可见", null=False, blank=False, default=False)
     file_type = models.CharField(verbose_name="文件类型", max_length=16, null=False, blank=False, default='未知类型')
+    labels_path = models.CharField(verbose_name="标签文件路径", max_length=255, null=True, blank=True, default=None)
+    data_pick_time_start = models.DateTimeField(verbose_name="数据集选取时间段开始", null=True, blank=True, default=None)
+    data_pick_time_end = models.DateTimeField(verbose_name="数据集选取时间段结束", null=True, blank=True, default=None)
 
     # 联合去重
     class Meta:
         constraints = [
             models.UniqueConstraint(fields=['owner', 'dataset_name'], name='unique_owner_dataset')
         ]
+
+
 
 
 # 用户上传的反馈

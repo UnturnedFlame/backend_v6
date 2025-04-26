@@ -120,7 +120,7 @@ def plot_tree_multiple_sensor(list1, list2_sensor1, list2_sensor2, list2_sensor3
     return save_path + '/TreePlot.png'
 
 
-# 单传感器数据的健康评估
+# 健康评估
 def model_eval(extracted_features: pd.DataFrame, raw_data_filepath, model_path, save_path, algorithm, extra_algorithm_filepath=None, username=None, multiple_sensors=False):
 
     if model_path is not None:
@@ -181,6 +181,7 @@ def model_eval(extracted_features: pd.DataFrame, raw_data_filepath, model_path, 
         num_status = len(status_names)
         result_log_of_all_examples = np.zeros(num_status)
 
+        status_probability = []
         # 对所有样本分别进行健康评估，最后通过投票，选择样本数量最多的隶属状态为样本总体的隶属状态
         for i in range(num_examples):
             if not multiple_sensors:
@@ -238,13 +239,19 @@ def model_eval(extracted_features: pd.DataFrame, raw_data_filepath, model_path, 
             for i in range(len(sub_matrices)):
                 B.append(np.dot(W_array[i], sub_matrices[i]))
             result = np.dot(W, np.array(B))
+            # 对result进行归一化，使其在0-1之间
+            result = normalize(result.reshape(1, -1), norm='l1').squeeze()  # 使用normalize函数进行归一
             suggestion = save_path_of_example + "/suggestion.txt"
             fw = open(suggestion, 'w', encoding='gbk')
             fw.write(suggestion_dict[status_names[np.argmax(result)]])
 
             result_log_of_all_examples[np.argmax(result)] += 1
-
             plot_y = list(result)
+
+            print(f"example {i}, plot_y {plot_y}")
+
+            status_probability.append(result.tolist())
+
             plot_x = [m for m in status_names]
             plt.figure(figsize=(20, 10))
             plt.rcParams['font.sans-serif'] = ['SimHei']
@@ -272,6 +279,7 @@ def model_eval(extracted_features: pd.DataFrame, raw_data_filepath, model_path, 
             result_bar_of_all_examples.append(result_bar)
             suggestion_of_all_examples.append(suggestion)
             tree_of_all_examples.append(tree)
+        print(f"status scores: {status_probability}")
         # 最终根据所有样本的状态隶属评估结果，选择数量最多的隶属状态为总体的隶属状态
         final_result_suggestion = suggestion_dict[status_names[np.argmax(result_log_of_all_examples)]]
         status_of_all_examples = {}
@@ -285,7 +293,7 @@ def model_eval(extracted_features: pd.DataFrame, raw_data_filepath, model_path, 
         return {'weights_bar': weights_bar_of_all_examples, 'result_vector': result_vector_of_all_examples,
                 'result_bar': result_bar_of_all_examples, 'suggestion': suggestion_of_all_examples,
                 'tree': tree_of_all_examples, 'final_result_suggestion': final_result_suggestion,
-                'status_of_all_examples': status_of_all_examples}
+                'status_of_all_examples': status_of_all_examples, "status_probability": status_probability}
     except Exception as e:
         return {'weights_bar': None, 'result_vector': str(e)}
 

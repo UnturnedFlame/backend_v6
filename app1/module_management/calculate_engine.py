@@ -10,7 +10,7 @@ from sympy import false
 from app1.module_management.algorithms.functions.fault_diagnosis import diagnose_with_svc_model, \
     diagnose_with_random_forest_model, time_regression, diagnose_with_ulcnn, diagnose_with_simmodel, \
     diagnose_with_gru_model, diagnose_with_lstm_model, diagnose_with_user_private_algorithm, additional_fault_diagnose
-from app1.module_management.algorithms.functions.feature_selection import feature_imp, mutual_information_importance, \
+from app1.module_management.algorithms.functions.feature_selection import decision_tree_feature_imp, mutual_information_importance, \
     correlation_coefficient_importance
 from app1.module_management.algorithms.functions.health_evaluation import model_eval
 from app1.module_management.algorithms.functions.load_data import load_data
@@ -53,7 +53,7 @@ class ModuleStatus(Enum):
 
 
 class Reactor:
-    def __init__(self, schedule, algorithm_dict, params_dict, multiple_sensor):
+    def __init__(self, schedule, algorithm_dict, params_dict, multiple_sensor, dataset):
         """
         该算法引擎类的实例的初始化操作
         :param schedule: 各模块的运行流程
@@ -66,6 +66,7 @@ class Reactor:
         self.schedule = schedule
         self.current_module = ''
         self.error = None
+        self.dataset = dataset
         # 存储前端返回的需要运行的模型的信息，包括用到的模块，模块的具体信息，算法的使用参数等
         self.module_configuration = {module: {'usage': False, 'algorithm': '', 'params': {}, 'result': {},
                                               'introduction': ''} for module in
@@ -498,11 +499,11 @@ class Reactor:
         featuresToDrawLineChart = {}
         standard_scaler = StandardScaler()
 
-        # print(f"features_with_name: {features_with_name}")
 
         features_name = features_with_name['features_name']  # 特征名
 
         print(f"feature_extraction features name: {features_name}")
+        print(f"features_with_name: {features_with_name}")
 
         features_extracted_group_by_sensor = features_with_name['features_extracted_group_by_sensor']  # 各个传感器的特征
         for sensor, features in features_extracted_group_by_sensor.items():
@@ -606,7 +607,9 @@ class Reactor:
                                       username=username, multiple_sensors=self.multiple_sensor)
         else:
             # 多传感器健康评估，以及专有健康评估算法
-            '''还没写增值服务组件的逻辑'''
+            '''
+            还没写增值服务组件的逻辑
+            '''
             # results_path = model_eval_multiple_sensor(raw_data, model_path_multiple_sensor, save_path, algorithm,
             #                                           extra_algorithm_filepath=extra_health_evaluation_filepath,
             #                                           username=username)
@@ -636,7 +639,7 @@ class Reactor:
 
         self.results_to_response[algorithm_name]['最终评估结果'] = results_path.get('final_result_suggestion')
         self.results_to_response[algorithm_name]['各样本状态隶属度'] = results_path.get('status_of_all_examples')
-
+        self.results_to_response[algorithm_name]['样本状态隶属概率'] = results_path.get('status_probability')
         return results_path
 
     # 特征选择
@@ -667,8 +670,8 @@ class Reactor:
 
         if 'feature_imp' in use_algorithm:
             # 树模型的特征选择
-            selection_figure_path, features_selected, corr_matrix_heatmap, computed_values, all_features = feature_imp(multiple_sensor, rule, threshold,
-                                                                               user_dir=user_dir, feature_list=features_name_extracted)
+            selection_figure_path, features_selected, corr_matrix_heatmap, computed_values, all_features = decision_tree_feature_imp(multiple_sensor, rule, threshold,
+                                                                                                                                     user_dir=user_dir, feature_list=features_name_extracted)
         elif 'mutual_information_importance' in use_algorithm:
             # 互信息重要性的特征选择
             selection_figure_path, features_selected, corr_matrix_heatmap, computed_values, all_features = mutual_information_importance(multiple_sensor,
@@ -702,11 +705,11 @@ class Reactor:
     def fault_diagnosis(self, input_data, multiple_sensor=False):
         """
         故障诊断
-        :param input_data: 传入的数据流
+        :param input_data: 传入的数据流，包含
         :param multiple_sensor: 是否为多传感器数据的故障诊断
         :return: 构造的数据流
         """
-
+        mean_value_of_each_feature = {}
         self.current_module = '故障诊断'
         use_algorithm = self.module_configuration['故障诊断']['algorithm']
         # 如果传入的是原始信号序列，此时只能使用深度学习模型的故障诊断
@@ -721,47 +724,50 @@ class Reactor:
         multiple_sensor = self.multiple_sensor
         if '_multiple' in use_algorithm:
             multiple_sensor = True
+
+        accuracy = 0
+        cm_figure_save_path = ''
         # 根据用户使用的具体算法进行故障诊断
         if 'random_forest' in use_algorithm:
             # 随机森林的故障诊断
             (indicator, x_axis, num_has_fault, num_has_no_fault,
-             figure_path, complementary_figure, complementary_summary) = diagnose_with_random_forest_model(
+             figure_path, complementary_figure, complementary_summary, mean_value_of_each_feature, accuracy, cm_figure_save_path) = diagnose_with_random_forest_model(
                 input_data,
-                multiple_sensor, user_dir=user_dir)
+                multiple_sensor, user_dir=user_dir, labels_path=self.dataset.get('labels'))
             # print(f'num has fault: {num_has_fault}, num has no fault: {num_has_no_fault}')
 
             self.module_configuration['故障诊断']['result']['信号波形图'] = figure_path
         elif 'svc' in use_algorithm:
             # 支持向量机的故障诊断
             (indicator, x_axis, num_has_fault, num_has_no_fault,
-             figure_path, complementary_figure, complementary_summary) = diagnose_with_svc_model(
+             figure_path, complementary_figure, complementary_summary, mean_value_of_each_feature, accuracy, cm_figure_save_path) = diagnose_with_svc_model(
                 input_data,
                 multiple_sensor,
-                user_dir=user_dir)
+                user_dir=user_dir, labels_path=self.dataset.get('labels'))
             self.module_configuration['故障诊断']['result']['信号波形图'] = figure_path
         elif 'gru' in use_algorithm:
             # gru的故障诊断
             (indicator, x_axis, num_has_fault, num_has_no_fault,
-             figure_path, complementary_figure, complementary_summary) = diagnose_with_gru_model(self.data_stream,
-                                                                                                 multiple_sensor)
+             figure_path, complementary_figure, complementary_summary, mean_value_of_each_feature, accuracy, cm_figure_save_path) = diagnose_with_gru_model(self.data_stream,
+                                                                                                 multiple_sensor, labels_path=self.dataset.get('labels'))
             print(f'indicator: {indicator}')
             print(f'num has fault: {num_has_fault}'
                   f'num has no fault: {num_has_no_fault}')
         elif 'lstm' in use_algorithm:
             # lstm的故障诊断
             (indicator, x_axis, num_has_fault, num_has_no_fault,
-             figure_path, complementary_figure, complementary_summary) = diagnose_with_lstm_model(self.data_stream,
-                                                                                                  multiple_sensor)
+             figure_path, complementary_figure, complementary_summary, accuracy, cm_figure_save_path) = diagnose_with_lstm_model(self.data_stream,
+                                                                                                  multiple_sensor, labels_path=self.dataset.get('labels'))
         elif 'ulcnn' in use_algorithm:
             # 一维卷积网络的故障诊断
             (indicator, x_axis, num_has_fault, num_has_no_fault,
-             figure_path, complementary_figure, complementary_summary) = diagnose_with_ulcnn(self.data_stream,
-                                                                                             multiple_sensor)
+             figure_path, complementary_figure, complementary_summary, accuracy, cm_figure_save_path) = diagnose_with_ulcnn(self.data_stream,
+                                                                                             multiple_sensor, labels_path=self.dataset.get('labels'))
         elif 'spectrumModel' in use_algorithm:
             # 针对时频图的深度学习网络的故障诊断
             (indicator, x_axis, num_has_fault, num_has_no_fault,
-             figure_path, complementary_figure, complementary_summary) = diagnose_with_simmodel(self.data_stream,
-                                                                                                multiple_sensor)
+             figure_path, complementary_figure, complementary_summary, accuracy, cm_figure_save_path) = diagnose_with_simmodel(self.data_stream,
+                                                                                                multiple_sensor, labels_path=self.dataset.get('labels'))
         elif 'private_fault_diagnosis' in use_algorithm:
             # 用户私有的故障诊断算法，分为深度学习和机器学习的故障诊断，其输入有区别
             print(f'use_algorithm is {use_algorithm}')
@@ -771,11 +777,12 @@ class Reactor:
                 deeplearning = True  # 调用私有的深度学习的故障诊断算法
             private_fault_diagnosis_algorithm = self.module_configuration['故障诊断']['params']  # 增值服务故障诊断算法源文件的存放路径
             (indicator, x_axis, num_has_fault, num_has_no_fault,
-             figure_path, complementary_figure, complementary_summary) = diagnose_with_user_private_algorithm(
+             figure_path, complementary_figure, complementary_summary, accuracy, cm_figure_save_path) = diagnose_with_user_private_algorithm(
                 self.data_stream,
                 private_fault_diagnosis_algorithm,
                 deeplearning,
-                multiple_sensor)
+                multiple_sensor,
+                labels_path=self.dataset.get('labels'))
         else:
             # 扩充的故障诊断模型
             additional_model_type_list = ['additional_model_one_multiple_deeplearning',
@@ -824,6 +831,9 @@ class Reactor:
             self.results_to_response['故障诊断']['complementary_summary'] = complementary_summary
             self.results_to_response['故障诊断']['resultText'] = self.module_configuration['故障诊断']['result'][
                 '诊断结果']
+            self.results_to_response['故障诊断']['mean_value_of_each_feature'] = mean_value_of_each_feature
+            self.results_to_response['故障诊断']['accuracy'] = accuracy * 100
+            self.results_to_response['故障诊断']['cm_figure_Base64'] = cm_figure_save_path
             # print(f'indicator: {indicator}')
             print(f"features name: {self.data_stream['features_name']}")
             if self.data_stream['features_group_by_sensor'] is not None:
@@ -901,15 +911,14 @@ class Reactor:
 
         return example_with_selected_features
 
-    def start(self, datafile, queue=None):
+    def start(self, queue=None):
         """
         依据建立的模型进行业务处理
-        :param datafile: 输入的原始数据文件的路径
         :return: 无返回值
         :param queue: 后端视图进行多线程任务处理用户的模型运行请求，通过该队列queue进行子进程和父进程间的通信
         """
-        input_data = datafile
-        file_type = datafile.split('.')[-1]
+        input_data = self.dataset.get('data')
+        file_type = self.dataset.get('data').split('.')[-1]
         outcome = 'xxx'
 
         for module in self.schedule:
