@@ -1,5 +1,6 @@
 import pickle
 import subprocess
+from operator import index
 
 import joblib
 import matplotlib
@@ -12,7 +13,7 @@ import torch.nn as nn
 import torchaudio
 import json
 
-from sklearn.metrics import accuracy_score, confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import accuracy_score, confusion_matrix, ConfusionMatrixDisplay, recall_score, f1_score
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 # from app1.module_management.algorithms.models.model_ulcnn import ULCNN
@@ -109,11 +110,14 @@ def diagnose_with_svc_model(data_with_selected_features, multiple_sensor=False, 
                 # temp_example.loc[:, choose_features_multiple] = scaler.transform(temp_example[choose_features_multiple])
                 scaled_features = scaler.transform(temp_example[choose_features_multiple])
 
-                print(f"scaled_features: {scaled_features}")
+                scaled_features_dataframe = pd.DataFrame(scaled_features, columns=choose_features_multiple)
+                # print(f"scaled_features: {scaled_features}")
 
                 svc_model = joblib.load(
                     'app1/module_management/algorithms/models/fault_diagnosis/svc/mutli_svc_model.pkl')
-                svc_prediction = svc_model.predict(scaled_features)[0]
+                # svc_prediction = svc_model.predict(scaled_features)[0]
+                # svc_prediction = svc_model.predict(temp_example.loc[:, choose_features_multiple])[0]
+                svc_prediction = svc_model.predict(scaled_features_dataframe)[0]
             if svc_prediction == 1:
                 num_has_fault += 1
                 predictions.append(1)
@@ -138,7 +142,7 @@ def diagnose_with_svc_model(data_with_selected_features, multiple_sensor=False, 
             # 将归一化后的结果转换为列表并存储到 indicator 中
             indicator[col] = scaled_column.flatten().tolist()
         # 补充的故障诊断结果
-        mean_value_of_each_feature = compute_statistics_of_features(example, index_of_example_predicted_has_fault)
+        mean_value_of_each_feature = compute_statistics_of_features(example[selected_features], index_of_example_predicted_has_fault)
         save_path_of_complementary_result = 'app1/module_management/algorithms/functions/fault_diagnosis/' + user_dir
         if not os.path.exists(save_path_of_complementary_result):
             os.makedirs(save_path_of_complementary_result)
@@ -150,22 +154,23 @@ def diagnose_with_svc_model(data_with_selected_features, multiple_sensor=False, 
                                      fault_indices=index_of_example_predicted_has_fault)
         accuracy = 0
         cm_save_path = ''
+        f1, recall = None, None
         if labels_path and os.path.exists(labels_path):
             truth_labels = np.load(labels_path)
             print(f'labels: {truth_labels}')
             print(f'predictions: {predictions}')
             print(f'num_has_fault: {num_has_fault}')
             example_file_name = os.path.basename(example_filepath).split('.')[0]
-            accuracy, cm_save_path = evaluate_model(truth_labels, predictions, user_dir=user_dir,
+            accuracy, f1, recall, cm_save_path = evaluate_model(truth_labels, predictions, user_dir=user_dir,
                                                     filename=example_file_name)
             print(f'准确率: {accuracy}')
             print(f'混淆矩阵保存路径: {cm_save_path}')
 
-        return indicator, x_axis, num_has_fault, num_has_no_fault, figure_path, complementary_figure, complementary_summary, mean_value_of_each_feature, accuracy, cm_save_path
+        return indicator, x_axis, num_has_fault, num_has_no_fault, figure_path, complementary_figure, complementary_summary, mean_value_of_each_feature, accuracy, f1, recall, cm_save_path
     except Exception as e:
         # raise e
         print("svm故障诊断模块出现异常, ", str(e))
-        return None, e, 0, 0, None, None, None, None, None, None
+        return None, e, 0, 0, None, None, None, None, None, None, None, None
 
 
 # 计算对于特征的统计量
@@ -232,15 +237,66 @@ def compute_statistics_of_features(input_features: pd.DataFrame, index_for_fault
     return mean_value_of_each_feature
 
 
+# def evaluate_model(truth_labels, predictions, user_dir=None, filename=''):
+#     """
+#     计算模型的准确率并绘制混淆矩阵
+#
+#     :param truth_labels: 真实标签，一维的ndarray
+#     :param predictions: 模型预测结果，一维的ndarray
+#     :param user_dir: 用户模型运行结果的存放目录
+#     :param filename: 数据集名称
+#     :return: 准确率，混淆矩阵的保存路径
+#     """
+#     # 计算准确率
+#     accuracy = accuracy_score(truth_labels, predictions)
+#     print(f'模型准确率: {accuracy:.4f}')
+#
+#     # 计算混淆矩阵
+#     cm = confusion_matrix(truth_labels, predictions)
+#     print(f'混淆矩阵: \n{cm}')
+#
+#     # 绘制混淆矩阵
+#     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=['无故障', '有故障'])
+#     disp.plot(cmap=plt.cm.Blues)
+#     plt.title('混淆矩阵')
+#     plt.xlabel('预测标签')
+#     plt.ylabel('真实标签')
+#
+#     # 调整布局以防止文字溢出
+#     plt.tight_layout()
+#
+#     # 保存混淆矩阵图像
+#     if user_dir:
+#         save_path = os.path.join('app1/module_management/algorithms/functions/fault_diagnosis/', user_dir,
+#                                  filename+'_confusion_matrix.png')
+#     else:
+#         save_path = 'app1/module_management/algorithms/functions/fault_diagnosis/confusion_matrix.png'
+#
+#     if not os.path.exists(os.path.dirname(save_path)):
+#         os.makedirs(os.path.dirname(save_path))
+#
+#     plt.savefig(save_path, bbox_inches='tight')
+#     plt.close()
+#
+#     return accuracy, save_path
+
+# 示例调用
+# accuracy, cm_save_path = evaluate_model(truth_labels, predictions)
+# print(f'准确率: {accuracy}')
+# print(f'混淆矩阵保存路径: {cm_save_path}')
+
+
+# 随机森林的故障诊断
+
 def evaluate_model(truth_labels, predictions, user_dir=None, filename=''):
     """
-    计算模型的准确率并绘制混淆矩阵
+    计算模型的准确率、F1 Score 和召回率并绘制混淆矩阵
 
     :param truth_labels: 真实标签，一维的ndarray
     :param predictions: 模型预测结果，一维的ndarray
     :param user_dir: 用户模型运行结果的存放目录
     :param filename: 数据集名称
-    :return: 准确率，混淆矩阵的保存路径
+    :return: 准确率，F1 Score，召回率，混淆矩阵的保存路径
     """
     # 计算准确率
     accuracy = accuracy_score(truth_labels, predictions)
@@ -249,6 +305,14 @@ def evaluate_model(truth_labels, predictions, user_dir=None, filename=''):
     # 计算混淆矩阵
     cm = confusion_matrix(truth_labels, predictions)
     print(f'混淆矩阵: \n{cm}')
+
+    # 计算 F1 Score
+    f1 = f1_score(truth_labels, predictions)
+    print(f'F1 Score: {f1:.4f}')
+
+    # 计算召回率
+    recall = recall_score(truth_labels, predictions)
+    print(f'召回率: {recall:.4f}')
 
     # 绘制混淆矩阵
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=['无故障', '有故障'])
@@ -263,7 +327,7 @@ def evaluate_model(truth_labels, predictions, user_dir=None, filename=''):
     # 保存混淆矩阵图像
     if user_dir:
         save_path = os.path.join('app1/module_management/algorithms/functions/fault_diagnosis/', user_dir,
-                                 filename+'_confusion_matrix.png')
+                                 filename + '_confusion_matrix.png')
     else:
         save_path = 'app1/module_management/algorithms/functions/fault_diagnosis/confusion_matrix.png'
 
@@ -273,15 +337,9 @@ def evaluate_model(truth_labels, predictions, user_dir=None, filename=''):
     plt.savefig(save_path, bbox_inches='tight')
     plt.close()
 
-    return accuracy, save_path
-
-# 示例调用
-# accuracy, cm_save_path = evaluate_model(truth_labels, predictions)
-# print(f'准确率: {accuracy}')
-# print(f'混淆矩阵保存路径: {cm_save_path}')
+    return accuracy, round(f1, 3), recall, save_path
 
 
-# 随机森林的故障诊断
 def diagnose_with_random_forest_model(data_with_selected_features, multiple_sensor=False, user_dir=None, labels_path=None):
     """
     随机森林故障诊断
@@ -340,7 +398,13 @@ def diagnose_with_random_forest_model(data_with_selected_features, multiple_sens
         补充的故障诊断结果
         """
         # 分别计算有故障与无故障样本中每个特征的均值
-        mean_value_of_each_feature = compute_statistics_of_features(example, index_of_example_predicted_has_fault)
+        mean_value_of_each_feature = compute_statistics_of_features(example[selected_features],
+                                                                    index_of_example_predicted_has_fault)
+
+        # if not multiple_sensor:
+        #     mean_value_of_each_feature = compute_statistics_of_features(example[choose_features], index_of_example_predicted_has_fault)
+        # else:
+        #     mean_value_of_each_feature = compute_statistics_of_features(example[choose_features_multiple], index_of_example_predicted_has_fault)
 
         print(f"mean_value_of_each_feature: {mean_value_of_each_feature}")
 
@@ -372,21 +436,19 @@ def diagnose_with_random_forest_model(data_with_selected_features, multiple_sens
         # 在 diagnose_with_random_forest_model 函数中调用 evaluate_model 函数
         accuracy = 0
         cm_save_path = ''
+        f1 = None
+        recall = None
         if labels_path and os.path.exists(labels_path):
             truth_labels = np.load(labels_path)
-            print(f'labels: {truth_labels}')
-            print(f'predictions: {predictions}')
-            print(f'num_has_fault: {num_has_fault}')
             example_file_name = os.path.basename(example_filepath).split('.')[0]
-            print(f"example_file_name: {example_file_name}")
-            accuracy, cm_save_path = evaluate_model(truth_labels, predictions, user_dir=user_dir, filename=example_file_name)
+            accuracy, f1, recall, cm_save_path = evaluate_model(truth_labels, predictions, user_dir=user_dir, filename=example_file_name)
             print(f'准确率: {accuracy}')
             print(f'混淆矩阵保存路径: {cm_save_path}')
-        figure_path = plot_diagnosis(example_filepath, multiple_sensor, user_dir=user_dir)
-        return indicator, x_axis, num_has_fault, num_has_not_fault, figure_path, complementary_figure, complementary_summary, mean_value_of_each_feature, accuracy, cm_save_path
+        figure_path = plot_diagnosis(example_filepath, multiple_sensor, user_dir=user_dir, fault_indices=index_of_example_predicted_has_fault)
+        return indicator, x_axis, num_has_fault, num_has_not_fault, figure_path, complementary_figure, complementary_summary, mean_value_of_each_feature, accuracy, f1, recall, cm_save_path
     except Exception as e:
         print("随机森林故障诊断模块出现异常, ", str(e))
-        return None, e, 0, 0, None, None, None, None, None, None
+        return None, e, 0, 0, None, None, None, None, None, None, None, None
 
 
 # 补充的故障诊断的结果图
@@ -623,6 +685,7 @@ def diagnose_with_gru_model(data_with_selected_features, multiple_sensor=False, 
 
     num_has_fault = 0
     predictions = []
+    index_of_example_predicted_has_fault = []  # 记录有故障的样本索引
     try:
         with torch.no_grad():
             for i in range(num_examples):
@@ -652,6 +715,7 @@ def diagnose_with_gru_model(data_with_selected_features, multiple_sensor=False, 
                     else:
                         prediction = 1
                 if prediction == 1:
+                    index_of_example_predicted_has_fault.append(i)
                     print(f"样本{i + 1}，有故障")
                     num_has_fault += 1
                 else:
@@ -659,31 +723,34 @@ def diagnose_with_gru_model(data_with_selected_features, multiple_sensor=False, 
                 predictions.append(prediction)
 
         # 补充的故障诊断结果
+        # mean_value_of_each_feature = compute_statistics_of_features(example, index_of_example_predicted_has_fault)
         save_path_of_complementary_result = 'app1/module_management/algorithms/functions/fault_diagnosis/' + user_dir
         if not os.path.exists(save_path_of_complementary_result):
             os.makedirs(save_path_of_complementary_result)
+
         complementary_figure, complementary_summary = complementary_result_of_fault_diagnosis(predictions,
                                                                                               save_path_of_complementary_result)
         num_has_no_fault = num_examples - num_has_fault
-        figure_path = plot_diagnosis(example_filepath, multiple_sensor, user_dir=user_dir)
+        figure_path = plot_diagnosis(example_filepath, multiple_sensor, user_dir=user_dir, fault_indices=index_of_example_predicted_has_fault)
 
         accuracy = 0
         cm_save_path = ''
+        f1, recall = None, None
         if labels_path and os.path.exists(labels_path):
             truth_labels = np.load(labels_path)
             print(f'labels: {truth_labels}')
             print(f'predictions: {predictions}')
             print(f'num_has_fault: {num_has_fault}')
             example_file_name = os.path.basename(example_filepath).split('.')[0]
-            accuracy, cm_save_path = evaluate_model(truth_labels, predictions, user_dir=user_dir,
+            accuracy,f1,recall, cm_save_path = evaluate_model(truth_labels, predictions, user_dir=user_dir,
                                                     filename=example_file_name)
             print(f'准确率: {accuracy}')
             print(f'混淆矩阵保存路径: {cm_save_path}')
 
-        return None, None, num_has_fault, num_has_no_fault, figure_path, complementary_figure, complementary_summary, accuracy, cm_save_path
+        return None, None, num_has_fault, num_has_no_fault, figure_path, complementary_figure, complementary_summary, accuracy, f1, recall, cm_save_path
     except Exception as e:
         print('gru故障诊断出现异常, ', str(e))
-        return None, e, 0, 0, None, None, None, None, None
+        return None, e, 0, 0, None, None, None, None, None, None, None, None
 
 
 # 深度学习模型LSTM的故障诊断
@@ -703,6 +770,7 @@ def diagnose_with_lstm_model(data_with_selected_features, multiple_sensor=False,
     num_examples = int(examples.shape[0] / 2048)
     num_has_fault = 0
     predictions = []
+    index_of_example_predicted_has_fault = []  # 记录有故障的样本索引
     try:
         # 单传感器算法
         with torch.no_grad():
@@ -732,37 +800,41 @@ def diagnose_with_lstm_model(data_with_selected_features, multiple_sensor=False,
                         prediction = 0
                     else:
                         prediction = 1
+                predictions.append(prediction)
                 if prediction == 1:
+                    index_of_example_predicted_has_fault.append(i)
                     print(f"样本{i + 1}，有故障")
                     num_has_fault += 1
                 else:
                     print(f"样本{i + 1}，无故障")
 
         # 补充的故障诊断结果
+        # mean_value_of_each_feature = compute_statistics_of_features(example, index_of_example_predicted_has_fault)
         save_path_of_complementary_result = 'app1/module_management/algorithms/functions/fault_diagnosis/' + user_dir
         if not os.path.exists(save_path_of_complementary_result):
             os.makedirs(save_path_of_complementary_result)
         complementary_figure, complementary_summary = complementary_result_of_fault_diagnosis(predictions,
                                                                                               save_path_of_complementary_result)
         num_has_no_fault = num_examples - num_has_fault
-        figure_path = plot_diagnosis(example_filepath, multiple_sensor, user_dir=user_dir)
+        figure_path = plot_diagnosis(example_filepath, multiple_sensor, user_dir=user_dir, fault_indices=index_of_example_predicted_has_fault)
 
         accuracy = 0
         cm_save_path = ''
+        f1, recall = None, None
         if labels_path and os.path.exists(labels_path):
             truth_labels = np.load(labels_path)
             print(f'labels: {truth_labels}')
             print(f'predictions: {predictions}')
             print(f'num_has_fault: {num_has_fault}')
             example_file_name = os.path.basename(example_filepath).split('.')[0]
-            accuracy, cm_save_path = evaluate_model(truth_labels, predictions, user_dir=user_dir,
+            accuracy, f1, recall, cm_save_path = evaluate_model(truth_labels, predictions, user_dir=user_dir,
                                                     filename=example_file_name)
             print(f'准确率: {accuracy}')
             print(f'混淆矩阵保存路径: {cm_save_path}')
 
-        return None, None, num_has_fault, num_has_no_fault, figure_path, complementary_figure, complementary_summary, accuracy, cm_save_path
+        return None, None, num_has_fault, num_has_no_fault, figure_path, complementary_figure, complementary_summary, accuracy, f1, recall, cm_save_path
     except Exception as e:
-        return None, e, 0, 0, None, None, None, None, None
+        return None, e, 0, 0, None, None, None, None, None, None, None
 
 
 # 一维卷积模型的故障诊断
@@ -783,9 +855,11 @@ def diagnose_with_ulcnn(datastream, multiple_sensor=False, labels_path=None):
     num_examples = int(examples.shape[0] / 2048)
     num_has_fault = 0
     predictions = []
+    index_of_example_predicted_has_fault = []
     try:
         for i in range(num_examples):
-            example = examples[i * 2048:(i + 1)]
+            # example = examples[i * 2048:(i + 1)]
+            example = examples[i * 2048:(i + 1) * 2048]
             if not multiple_sensor:
                 # 单传感器的算法
                 example = example.flatten()
@@ -817,37 +891,40 @@ def diagnose_with_ulcnn(datastream, multiple_sensor=False, labels_path=None):
                 # print(f'prediction: {pre}')
                 result = pre.argmax().item()
             if result == 1:
+                index_of_example_predicted_has_fault.append(i)
                 print(f"样本{i + 1}，有故障")
                 num_has_fault += 1
                 predictions.append(1)
             else:
                 predictions.append(0)
                 print(f"样本{i + 1}，无故障")
-                # 补充的故障诊断结果
+        # 补充的故障诊断结果
+        # mean_value_of_each_feature = compute_statistics_of_features(example, index_of_example_predicted_has_fault)
         save_path_of_complementary_result = 'app1/module_management/algorithms/functions/fault_diagnosis/' + user_dir
         if not os.path.exists(save_path_of_complementary_result):
             os.makedirs(save_path_of_complementary_result)
         complementary_figure, complementary_summary = complementary_result_of_fault_diagnosis(predictions,
                                                                                               save_path_of_complementary_result)
         num_has_no_fault = num_examples - num_has_fault
-        figure_path = plot_diagnosis(example_filepath, multiple_sensor, user_dir=user_dir)
+        figure_path = plot_diagnosis(example_filepath, multiple_sensor, user_dir=user_dir, fault_indices=index_of_example_predicted_has_fault)
 
         accuracy = 0
         cm_save_path = ''
+        f1, recall = None, None
         if labels_path and os.path.exists(labels_path):
             truth_labels = np.load(labels_path)
             print(f'labels: {truth_labels}')
             print(f'predictions: {predictions}')
             print(f'num_has_fault: {num_has_fault}')
             example_file_name = os.path.basename(example_filepath).split('.')[0]
-            accuracy, cm_save_path = evaluate_model(truth_labels, predictions, user_dir=user_dir,
+            accuracy, f1, recall, cm_save_path = evaluate_model(truth_labels, predictions, user_dir=user_dir,
                                                     filename=example_file_name)
             print(f'准确率: {accuracy}')
             print(f'混淆矩阵保存路径: {cm_save_path}')
 
-        return None, None, num_has_fault, num_has_no_fault, figure_path, complementary_figure, complementary_summary, accuracy, cm_save_path
+        return None, None, num_has_fault, num_has_no_fault, figure_path, complementary_figure, complementary_summary, accuracy, f1, recall, cm_save_path
     except Exception as e:
-        return None, e, 0, 0, None, None, None, None, None
+        return None, e, 0, 0, None, None, None, None, None, None, None
 
 
 # 生成频谱图
@@ -957,6 +1034,7 @@ def diagnose_with_simmodel(datastream, multiple_sensor=False, labels_path=None):
     num_examples = int(examples.shape[0] / 2048)
     num_has_fault = 0
     predictions = []
+    index_of_example_predicted_has_fault = []
     # 单传感器的算法
     try:
         for i in range(num_examples):
@@ -990,11 +1068,13 @@ def diagnose_with_simmodel(datastream, multiple_sensor=False, labels_path=None):
                 # 根据推理结果判断是否有故障
                 result = pre.argmax().item()
             if result == 1:
+                index_of_example_predicted_has_fault.append(i)
                 num_has_fault += 1
                 predictions.append(1)
             else:
                 predictions.append(0)
-                # 补充的故障诊断结果
+        # 补充的故障诊断结果
+        # mean_value_of_each_feature = compute_statistics_of_features(example, index_of_example_predicted_has_fault)
         save_path_of_complementary_result = 'app1/module_management/algorithms/functions/fault_diagnosis/' + user_dir
         if not os.path.exists(save_path_of_complementary_result):
             os.makedirs(save_path_of_complementary_result)
@@ -1002,24 +1082,26 @@ def diagnose_with_simmodel(datastream, multiple_sensor=False, labels_path=None):
                                                                                               save_path_of_complementary_result)
         num_has_no_fault = num_examples - num_has_fault
         # 绘制故障诊断的结果图像，多传感器为7传感器数据
-        figure_path = spectrum_figure(example_filepath, multiple_sensor, num_sensor=7, user_dir=user_dir)
+        # figure_path = spectrum_figure(example_filepath, multiple_sensor, num_sensor=7, user_dir=user_dir)
+        figure_path = plot_diagnosis(example_filepath, multiple_sensor, user_dir=user_dir, fault_indices=index_of_example_predicted_has_fault)
 
         accuracy = 0
         cm_save_path = ''
+        f1, recall = None, None
         if labels_path and os.path.exists(labels_path):
             truth_labels = np.load(labels_path)
             print(f'labels: {truth_labels}')
             print(f'predictions: {predictions}')
             print(f'num_has_fault: {num_has_fault}')
             example_file_name = os.path.basename(example_filepath).split('.')[0]
-            accuracy, cm_save_path = evaluate_model(truth_labels, predictions, user_dir=user_dir,
+            accuracy, f1, recall, cm_save_path = evaluate_model(truth_labels, predictions, user_dir=user_dir,
                                                     filename=example_file_name)
             print(f'准确率: {accuracy}')
             print(f'混淆矩阵保存路径: {cm_save_path}')
 
-        return None, None, num_has_fault, num_has_no_fault, figure_path, complementary_figure, complementary_summary, accuracy, cm_save_path
+        return None, None, num_has_fault, num_has_no_fault, figure_path, complementary_figure, complementary_summary, accuracy, f1, recall, cm_save_path
     except Exception as e:
-        return None, e, 0, 0, None, None, None, None, None
+        return None, e, 0, 0, None, None, None, None, None, None, None, None
 
 
 def diagnose_with_user_private_algorithm(datastream, private_algorithm, deeplearning=True, multiple_sensor=False, labels_path=None):
@@ -1127,17 +1209,18 @@ def diagnose_with_user_private_algorithm(datastream, private_algorithm, deeplear
 
         accuracy = 0
         cm_save_path = ''
+        f1, recall = None, None
         if labels_path is not None:
             truth_labels = np.load(labels_path)
             print(f'labels: {truth_labels}')
             print(f'predictions: {predictions}')
             print(f'num_has_fault: {num_has_fault}')
             example_file_name = os.path.basename(example_filepath).split('.')[0]
-            accuracy, cm_save_path = evaluate_model(truth_labels, predictions, user_dir=user_dir,
+            accuracy, f1, recall, cm_save_path = evaluate_model(truth_labels, predictions, user_dir=user_dir,
                                                     filename=example_file_name)
             print(f'准确率: {accuracy}')
             print(f'混淆矩阵保存路径: {cm_save_path}')
-        return indicator, x_axis, num_has_fault, num_has_not_fault, figure_path, complementary_figure, complementary_summary, accuracy, cm_save_path
+        return indicator, x_axis, num_has_fault, num_has_not_fault, figure_path, complementary_figure, complementary_summary, accuracy, f1, recall, cm_save_path
     else:
         if error:
             return None, error
@@ -1150,13 +1233,14 @@ def diagnose_with_user_private_algorithm(datastream, private_algorithm, deeplear
 
         accuracy = 0
         cm_save_path = ''
+        f1, recall = None, None
         if labels_path is not None:
             truth_labels = np.load(labels_path)
             print(f'labels: {truth_labels}')
             print(f'predictions: {predictions}')
             print(f'num_has_fault: {num_has_fault}')
             example_file_name = os.path.basename(example_filepath).split('.')[0]
-            accuracy, cm_save_path = evaluate_model(truth_labels, predictions, user_dir=user_dir,
+            accuracy, f1, recall, cm_save_path = evaluate_model(truth_labels, predictions, user_dir=user_dir,
                                                     filename=example_file_name)
             print(f'准确率: {accuracy}')
             print(f'混淆矩阵保存路径: {cm_save_path}')
@@ -1165,7 +1249,7 @@ def diagnose_with_user_private_algorithm(datastream, private_algorithm, deeplear
         complementary_figure, complementary_summary = complementary_result_of_fault_diagnosis(predictions,
                                                                                               save_path_of_complementary_result)
 
-        return None, None, num_has_fault, num_has_no_fault, figure_path, complementary_figure, complementary_summary, accuracy, cm_save_path
+        return None, None, num_has_fault, num_has_no_fault, figure_path, complementary_figure, complementary_summary, accuracy, f1, recall, cm_save_path
 
 
 # 绘制信号波形图
@@ -1301,7 +1385,7 @@ def plot_diagnosis(example_filepath, multiple_sensor=False, num_sensor=7, user_d
     return save_path
 
 
-def additional_fault_diagnose(datastream, multiple_sensor=False, model_type='additional_model_1'):
+def additional_fault_diagnose(datastream, multiple_sensor=False, model_type='additional_model_1', labels_path=None):
     """
     扩充故障诊断模型，包括模型：
     基于多传感器信号级加权融合的故障检测与诊断技术 (additional_model_one_multiple)
@@ -1314,6 +1398,7 @@ def additional_fault_diagnose(datastream, multiple_sensor=False, model_type='add
     :param multiple_sensor: 是否为多传感器数据
     :param model_type: 模型类型
     :param datastream: 输入数据流
+    :param labels_path: 数据集对应真是标签
     :return: 预测故障类型，0表示无故障，1表示有故障
     """
     # if model_type == 'additional_model_1':
@@ -1382,12 +1467,26 @@ def additional_fault_diagnose(datastream, multiple_sensor=False, model_type='add
             os.makedirs(save_path_of_complementary_result)
         complementary_figure, complementary_summary = complementary_result_of_fault_diagnosis(predictions,
                                                                                               save_path_of_complementary_result)
+
+        accuracy = 0
+        cm_save_path = ''
+        f1, recall = None, None
+        if labels_path and os.path.exists(labels_path):
+            truth_labels = np.load(labels_path)
+            print(f'labels: {truth_labels}')
+            print(f'predictions: {predictions}')
+            print(f'num_has_fault: {num_has_fault}')
+            example_file_name = os.path.basename(example_filepath).split('.')[0]
+            accuracy, f1, recall, cm_save_path = evaluate_model(truth_labels, predictions, user_dir=user_dir,
+                                                    filename=example_file_name)
+            print(f'准确率: {accuracy}')
+            print(f'混淆矩阵保存路径: {cm_save_path}')
         # print(f'num_has_fault: {num_has_fault}, num_has_no_fault: {num_has_no_fault}')
         # 绘制故障诊断的结果图像，多传感器为7传感器数据
         figure_path = plot_diagnosis(example_filepath, multiple_sensor, user_dir=user_dir)
-        return None, None, num_has_fault, num_has_no_fault, figure_path, complementary_figure, complementary_summary
+        return None, None, num_has_fault, num_has_no_fault, figure_path, complementary_figure, complementary_summary, accuracy, f1, recall, cm_save_path
     except Exception as e:
-        return None, e, 0, 0, None, None, None
+        return None, e, 0, 0, None, None, None, None, None, None, None, None
 
 
 if __name__ == '__main__':

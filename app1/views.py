@@ -2,6 +2,7 @@ import base64
 import io
 import json
 import multiprocessing
+import uuid
 from io import BytesIO
 from multiprocessing import freeze_support
 import os
@@ -1230,18 +1231,25 @@ def upload_datafile(request):
         labels = request.FILES.get('labels', None)
         filename = request.POST.get('filename')
         description = request.POST.get('description')
-        multiple_sensors = request.POST.get('multipleSensors')
+        multipleSensors = request.POST.get('multipleSensors')
         dataPickTimeStart = request.POST.get('dataPickTimeStart')
         dataPickTimeEnd = request.POST.get('dataPickTimeEnd')
+        sensor = request.POST.get('sensor')
+        signalType = request.POST.get('signalType')  # 0 振动信号， 1 声信号， 2 电信号
+        dataPickObject = request.POST.get('dataPickObject')
+        sample_rate = request.POST.get('sampleRate')
 
         print(f"dataPickTime: {dataPickTimeStart} - {dataPickTimeEnd}")
 
-        multiple_sensor = True if multiple_sensors == 'multiple' else False
+        multiple_sensor = True if multipleSensors == 'multiple' else False
         token = extract_jwt_from_request(request)
         try:
             payload = verify_jwt(token, settings.SECRET_KEY)
             username = payload.get('username')
-
+        except Exception as e:
+            print(str(e))
+            return JsonResponse({'message': 'token invalid', 'code': 401})
+        try:
             if datafile is not None:
                 user_save_dir = f"./app1/recv_file/datasets/{username}"
                 if not os.path.exists(user_save_dir):
@@ -1280,6 +1288,10 @@ def upload_datafile(request):
                         multiple_sensors=multiple_sensor,
                         file_type=file_type,
                         labels_path=labels_save_path,
+                        signal_type=signalType,
+                        signal_pick_object=dataPickObject,
+                        sample_rate=sample_rate,
+                        sensor=sensor,
                         data_pick_time_start=data_pick_time_start,
                         data_pick_time_end=data_pick_time_end,
                     )
@@ -1288,10 +1300,10 @@ def upload_datafile(request):
                 else:
                     return JsonResponse({'message': '同名文件已存在', 'code': 400})
             return JsonResponse({'message': '无效的文件路径', 'code': 400})
-
         except Exception as e:
             print(str(e))
-            return JsonResponse({'message': 'token invalid', 'code': 401})
+            return JsonResponse({'message': '上传数据失败', 'code': 400})
+
 
 
 # 用户获取上传的文件数据
@@ -1320,6 +1332,8 @@ def user_fetch_datafiles(request):
                     'dataset_name': obj.dataset_name,
                     'description': obj.description,
                     'owner': obj.owner.username,
+                    'data_pick_object': obj.signal_pick_object,
+                    'signal_type': "振动信号" if obj.signal_type == 0 else "声信号" if obj.signal_type == 1 else "电信号",
                     'file_type': obj.file_type
                 } for obj in objects
             ]
@@ -1353,11 +1367,13 @@ def user_delete_datafile(request):
             return JsonResponse({'message': 'token invalid', 'code': 401})
 
 
+# 完整性校验测试样本
 example_for_validation = {
     'single_sensor_example': 'app1/recv_file/examples/validation_examples/single_example.npy',
     'multiple_sensor_example': 'app1/recv_file/examples/validation_examples/multiple_example.npy',
-    # 'example_for_interpolation_validation': 'app1/recv_file/examples/validation_examples/data_for_interpolation_validation.npy',
-    'example_for_interpolation_validation': 'app1/recv_file/examples/validation_examples/sampled_example.npy',
+    'example_for_interpolation_validation': 'app1/recv_file/examples/validation_examples/data_for_interpolation_validation.npy',
+    # 'example_for_interpolation_validation': 'app1/recv_file/examples/validation_examples/sampled_example.npy',
+    # 'example_for_interpolation_validation': 'app1/recv_file/examples/validation_examples/test_interpoaltion_continuos.npy',
     'example_for_fault_diagnosis_validation': 'app1/recv_file/examples/validation_examples/exampleForFaultDiagnosisValidation.npy',
     'example_for_fault_diagnosis_validation_multiple': 'app1/recv_file/examples/validation_examples/multiple_sensors_7_dataset_10.npy',
     'labels': 'app1/recv_file/examples/validation_examples/exampleForFaultDiagnosisValidation_label.npy',
@@ -2349,26 +2365,6 @@ def generate_output(request):
             print(str(e))
             return JsonResponse({'message': str(e), 'code': 405})
 
-
-# 生成数据集描述的文本
-# def generate_dataset_description(dataset):
-#     try:
-#         description = f"### 数据集描述\n"
-#         description += f"- **数据集名称**: {dataset.dataset_name}\n"
-#         description += f"- **描述**: {dataset.description}\n"
-#         # description += f"- **文件路径**: {dataset.file_path}\n"
-#         description += f"- **文件类型**: {dataset.file_type}\n"
-#         # description += f"- **是否包含多个传感器数据**: {'是' if dataset.multiple_sensors else '否'}\n"
-#         description += f"- **数据采集时间段**: {dataset.data_pick_time_start} - {dataset.data_pick_time_end}\n"
-#
-#         # 获取数据集的列名
-#         # df = pd.read_csv(dataset.file_path)
-#         # column_names = df.columns.tolist()
-#         # description += f"- **列名**: {', '.join(column_names)}\n"
-#         return description
-#     except Exception as e:
-#         print("数据集描述生成失败：" + str(e))
-#         return None
 def generate_dataset_description(dataset):
     try:
         # 使用 reportlab 的样式
@@ -2408,6 +2404,10 @@ def generate_dataset_description(dataset):
 
         description = f"数据集描述<br/>"
         description += f"数据集名称: {dataset.dataset_name}<br/>"
+        description += f"数据集采集对象: {dataset.signal_pick_object}<br/>"
+        description += f"数据类型: {dataset.signal_type}<br/>"
+        description += f"采样率: {dataset.sample_rate}Hz<br/>"
+        description += f"传感器: {dataset.sensor}<br/>"
         description += f"描述: {dataset.description}<br/>"
         description += f"文件类型: {dataset.file_type}<br/>"
         description += f"数据采集时间段: {dataset.data_pick_time_start} - {dataset.data_pick_time_end}<br/>"
@@ -2425,8 +2425,12 @@ def generate_dataset_description(dataset):
 def generate_model_evaluation_report(request):
     if request.method == 'POST':
         token = extract_jwt_from_request(request)
-        model_id = request.POST.get('modelId')
+        model_id = request.POST.get('modelId', None)
+        schedule = request.POST.get('schedule')
         file_name = request.POST.get('fileName')
+        downLoad = request.POST.get('downLoad')
+
+        print(f"downLoad: {downLoad}")
         try:
             payload = verify_jwt(token, settings.SECRET_KEY)
             username = payload['username']
@@ -2439,63 +2443,86 @@ def generate_model_evaluation_report(request):
             # 根据文件名与用户id获取模型使用的数据集
             user = User.objects.get(username=payload.get('username'))
             dataset = models.SavedDatasetsFromUser.objects.filter(owner=user, dataset_name=file_name).first()
-
-            dataset_description = generate_dataset_description(dataset)
-            if dataset_description is None:
-                return JsonResponse({'message': '数据集描述生成失败', 'code': 405})
+            if dataset is None:
+                return JsonResponse({'message': '数据集不存在', 'code': 405})
+            else:
+                dataset_description = generate_dataset_description(dataset)
+                if dataset_description is None:
+                    return JsonResponse({'message': '数据集描述生成失败', 'code': 405})
 
             # 根据model_id 获取模型
-            model = models.UserModel.objects.get(id=model_id)
-            model_config = model.model_config
-            modules = model_config.get('schedule')
+            if model_id is not None:
+                # return JsonResponse({'message': '模型不存在', 'code': 405})
+                model = models.UserModel.objects.get(id=model_id)
+                model_config = model.model_config
+                modules = model_config.get('schedule')
+                flowchart_figure_name = f'{model.model_name}_id{model_id}'
+                model_name = model.model_name
+                developer = model.author.username
+            else:
+                # 生成随机序列号作为保存id
+                model_id = str(uuid.uuid4())
+                flowchart_figure_name = f'unsaved_model_id{model_id}'
+                model_name = '未命名模型'
+                developer = username
+                modules = schedule.split(',')
+
+            print(f"modules: {modules}")
             # 根据模型模块的运行顺序生成模型的流程图
             flow_chart_save_path = f"./app1/reports/flowchart/{username}"
             if not os.path.exists(flow_chart_save_path):
                 os.makedirs(flow_chart_save_path)
-            flow_chart_save_path += '/' + f'{model.model_name}_id{model_id}'
+
+            flow_chart_save_path += '/' + flowchart_figure_name
             _ = create_detailed_flowchart(modules, save_path=flow_chart_save_path)
 
             # 将流程图路径以及生成的数据集描述加入results_to_generate_output中
             results_to_generate_output['flowChart'] = flow_chart_save_path
             results_to_generate_output['datasetDescription'] = dataset_description
 
-            print(f"results_to_generate_output: {results_to_generate_output}")
+            # print(f"results_to_generate_output: {results_to_generate_output}")
 
             # 生成pdf有封面的测试报告
             # pdf_content = generate_pdf(results_to_generate_output)
             cover_info = {
-                'model_name': model.model_name,
-                "developer": model.author.username,
+                'model_name': model_name,
+                "developer": developer,
                 "tester": payload.get('username'),
                 "dataset": dataset.dataset_name
             }
             pdf_content = generate_pdf_with_cover(results_to_generate_output, cover_info)
 
-            # 获取或创建文件存储路径
-            user_save_dir = f"./app1/reports/{username}"
-            if not os.path.exists(user_save_dir):
-                os.makedirs(user_save_dir)
+            if int(downLoad) == 0:
+                # 获取或创建文件存储路径
+                user_save_dir = f"./app1/reports/{username}"
+                if not os.path.exists(user_save_dir):
+                    os.makedirs(user_save_dir)
 
-            # 生成随机序列
-            random_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+                # 生成随机序列
+                random_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
 
-            # 获取文件名和扩展名
-            # filename, file_extension = os.path.splitext(report_file.name)
+                # 获取文件名和扩展名
+                # filename, file_extension = os.path.splitext(report_file.name)
 
-            # 构建新的文件名
-            new_filename = f"report_{random_suffix}.pdf"
+                # 构建新的文件名
+                new_filename = f"report_{random_suffix}.pdf"
 
-            # 保存pdf文件
-            fs = FileSystemStorage(location=user_save_dir)
-            file_path = fs.save(new_filename, io.BytesIO(pdf_content))
-            full_path = os.path.join(user_save_dir, file_path)
+                # 保存pdf文件
+                fs = FileSystemStorage(location=user_save_dir)
+                file_path = fs.save(new_filename, io.BytesIO(pdf_content))
+                full_path = os.path.join(user_save_dir, file_path)
 
-            # 更新数据库中的report_path
-            models.UserModel.objects.filter(id=model_id).update(report_path=full_path)
+                # 更新数据库中的report_path
+                models.UserModel.objects.filter(id=model_id).update(report_path=full_path)
 
-            print(f"report path: {full_path}")
+                print(f"report path: {full_path}")
 
-            return JsonResponse({'message': '生成测试报告成功', 'code': 200, 'report_path': full_path})
+                return JsonResponse({'message': '生成测试报告成功', 'code': 200, 'report_path': full_path})
+            else:
+                # 返回PDF响应
+                response = HttpResponse(pdf_content, content_type='application/pdf')
+                response['Content-Disposition'] = 'attachment; filename="report.pdf"'
+                return response
             #
             # except models.UserModel.DoesNotExist:
             #     return JsonResponse({'message': 'Application not found', 'code': 404})

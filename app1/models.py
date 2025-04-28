@@ -59,7 +59,11 @@ class SavedDatasetsFromUser(models.Model):
     publicity = models.BooleanField(verbose_name="是否公开可见", null=False, blank=False, default=False)
     file_type = models.CharField(verbose_name="文件类型", max_length=16, null=False, blank=False, default='未知类型')
     labels_path = models.CharField(verbose_name="标签文件路径", max_length=255, null=True, blank=True, default=None)
+    signal_pick_object = models.CharField(verbose_name="数据采集对象", max_length=16, null=False, blank=False, default='unknown')
+    sensor = models.CharField(verbose_name="传感器", max_length=255, null=False, blank=False, default='unknown')
+    signal_type = models.IntegerField(verbose_name="信号类型 0-振动信号 1-声信号 2-电信号", null=False, blank=False, default=0)
     data_pick_time_start = models.DateTimeField(verbose_name="数据集选取时间段开始", null=True, blank=True, default=None)
+    sample_rate = models.IntegerField(verbose_name="采样率", null=False, blank=False, default=0)
     data_pick_time_end = models.DateTimeField(verbose_name="数据集选取时间段结束", null=True, blank=True, default=None)
 
     # 联合去重

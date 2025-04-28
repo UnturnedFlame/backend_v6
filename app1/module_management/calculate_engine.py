@@ -10,7 +10,8 @@ from sympy import false
 from app1.module_management.algorithms.functions.fault_diagnosis import diagnose_with_svc_model, \
     diagnose_with_random_forest_model, time_regression, diagnose_with_ulcnn, diagnose_with_simmodel, \
     diagnose_with_gru_model, diagnose_with_lstm_model, diagnose_with_user_private_algorithm, additional_fault_diagnose
-from app1.module_management.algorithms.functions.feature_selection import decision_tree_feature_imp, mutual_information_importance, \
+from app1.module_management.algorithms.functions.feature_selection import decision_tree_feature_imp, \
+    mutual_information_importance, \
     correlation_coefficient_importance
 from app1.module_management.algorithms.functions.health_evaluation import model_eval
 from app1.module_management.algorithms.functions.load_data import load_data
@@ -45,6 +46,7 @@ def add_user_dir(datastream: dict):
     if not datastream.get('user_dir') and datastream.get('filepath'):
         split_path = datastream['filepath'].split('/')
         datastream['user_dir'] = split_path[-2] + '/' + split_path[-1].split('.')[0]
+
 
 # 自定义枚举类，用于返回模块运行状态
 class ModuleStatus(Enum):
@@ -91,7 +93,7 @@ class Reactor:
         self.data_stream = {'filepath': None, 'raw_data': None, 'extracted_features': None,
                             'filename': None, 'user_dir': None, 'features_name': None, 'diagnosis_result': None,
                             'features_group_by_sensor': None, 'multiple_sensor': multiple_sensor}
-        self.has_anomaly_data = False
+        self.has_anomaly_data = True
         self.gradio_app = None
         self.lightning_model = None
 
@@ -313,7 +315,6 @@ class Reactor:
         #
         return self.data_stream
 
-
     # 异常值检测
     def anomaly_detection(self, datafile):
         algorithm = self.module_configuration['异常值检测']['algorithm']
@@ -349,7 +350,6 @@ class Reactor:
             return ''
 
         return self.data_stream
-
 
     def interpolation_v2(self, datafile):
         """
@@ -397,14 +397,12 @@ class Reactor:
         #     multiple_sensor = self.multiple_sensor
         #     figure_path = None
 
-
-
         results, multiple_sensor = interpolation_for_signals(raw_data, use_algorithm, filename, user_dir=user_dir,
                                                              private_algorithm=private_interpolation,
-                                                             multiple_sensor=self.multiple_sensor, has_nan_value=self.has_anomaly_data)
+                                                             multiple_sensor=self.multiple_sensor,
+                                                             has_nan_value=self.has_anomaly_data)
         interpolated_data_path = results.get('interpolated_data')
         figure_path = results.get('figure_paths')
-
 
         if interpolated_data_path is None:
             # 插值处理出错，打印错误信息
@@ -498,7 +496,6 @@ class Reactor:
 
         featuresToDrawLineChart = {}
         standard_scaler = StandardScaler()
-
 
         features_name = features_with_name['features_name']  # 特征名
 
@@ -670,28 +667,33 @@ class Reactor:
 
         if 'feature_imp' in use_algorithm:
             # 树模型的特征选择
-            selection_figure_path, features_selected, corr_matrix_heatmap, computed_values, all_features = decision_tree_feature_imp(multiple_sensor, rule, threshold,
-                                                                                                                                     user_dir=user_dir, feature_list=features_name_extracted)
+            selection_figure_path, features_selected, corr_matrix_heatmap, computed_values, all_features = decision_tree_feature_imp(
+                multiple_sensor, rule, threshold,
+                user_dir=user_dir, feature_list=features_name_extracted)
         elif 'mutual_information_importance' in use_algorithm:
             # 互信息重要性的特征选择
-            selection_figure_path, features_selected, corr_matrix_heatmap, computed_values, all_features = mutual_information_importance(multiple_sensor,
-                                                                                                 rule, threshold,
-                                                                                                 user_dir=user_dir,
-                                                                                                 feature_list=features_name_extracted)
+            selection_figure_path, features_selected, corr_matrix_heatmap, computed_values, all_features = mutual_information_importance(
+                multiple_sensor,
+                rule, threshold,
+                user_dir=user_dir,
+                feature_list=features_name_extracted)
         else:
             # 相关系数重要性的特征选择
-            selection_figure_path, features_selected, corr_matrix_heatmap, computed_values, all_features = correlation_coefficient_importance(multiple_sensor,
-                                                                                                      rule, threshold,
-                                                                                                      user_dir=user_dir,
-                                                                                                      feature_list=features_name_extracted)
+            selection_figure_path, features_selected, corr_matrix_heatmap, computed_values, all_features = correlation_coefficient_importance(
+                multiple_sensor,
+                rule, threshold,
+                user_dir=user_dir,
+                feature_list=features_name_extracted)
 
         # 需要返回给前端的结果
         self.results_to_response['特征选择']['figure_Base64'] = selection_figure_path
         self.results_to_response['特征选择']['heatmap_Base64'] = corr_matrix_heatmap
         self.results_to_response['特征选择']['selected_features'] = features_selected
-        self.results_to_response['特征选择']['computed_values'] = computed_values if not isinstance(computed_values, np.ndarray) else computed_values.tolist()
-        self.results_to_response['特征选择']['all_features'] = all_features if not isinstance(all_features, np.ndarray) else all_features.tolist()
-        self.results_to_response['特征选择']['threshold'] =  f'rule{rule}_{threshold}' # 阈值规则 + _ + 阈值
+        self.results_to_response['特征选择']['computed_values'] = computed_values if not isinstance(computed_values,
+                                                                                                    np.ndarray) else computed_values.tolist()
+        self.results_to_response['特征选择']['all_features'] = all_features if not isinstance(all_features,
+                                                                                              np.ndarray) else all_features.tolist()
+        self.results_to_response['特征选择']['threshold'] = f'rule{rule}_{threshold}'  # 阈值规则 + _ + 阈值
         if rule == 1:
             self.results_to_response['特征选择']['rule'] = f'选择重要性大于{threshold}的特征'
         else:
@@ -727,20 +729,25 @@ class Reactor:
 
         accuracy = 0
         cm_figure_save_path = ''
+        enable_features_contrast = 0
         # 根据用户使用的具体算法进行故障诊断
         if 'random_forest' in use_algorithm:
+            enable_features_contrast = 1
             # 随机森林的故障诊断
             (indicator, x_axis, num_has_fault, num_has_no_fault,
-             figure_path, complementary_figure, complementary_summary, mean_value_of_each_feature, accuracy, cm_figure_save_path) = diagnose_with_random_forest_model(
+             figure_path, complementary_figure, complementary_summary, mean_value_of_each_feature, accuracy, f1, recall,
+             cm_figure_save_path) = diagnose_with_random_forest_model(
                 input_data,
                 multiple_sensor, user_dir=user_dir, labels_path=self.dataset.get('labels'))
             # print(f'num has fault: {num_has_fault}, num has no fault: {num_has_no_fault}')
 
             self.module_configuration['故障诊断']['result']['信号波形图'] = figure_path
         elif 'svc' in use_algorithm:
+            enable_features_contrast = 1
             # 支持向量机的故障诊断
             (indicator, x_axis, num_has_fault, num_has_no_fault,
-             figure_path, complementary_figure, complementary_summary, mean_value_of_each_feature, accuracy, cm_figure_save_path) = diagnose_with_svc_model(
+             figure_path, complementary_figure, complementary_summary, mean_value_of_each_feature, accuracy, f1, recall,
+             cm_figure_save_path) = diagnose_with_svc_model(
                 input_data,
                 multiple_sensor,
                 user_dir=user_dir, labels_path=self.dataset.get('labels'))
@@ -748,26 +755,30 @@ class Reactor:
         elif 'gru' in use_algorithm:
             # gru的故障诊断
             (indicator, x_axis, num_has_fault, num_has_no_fault,
-             figure_path, complementary_figure, complementary_summary, mean_value_of_each_feature, accuracy, cm_figure_save_path) = diagnose_with_gru_model(self.data_stream,
-                                                                                                 multiple_sensor, labels_path=self.dataset.get('labels'))
+             figure_path, complementary_figure, complementary_summary, accuracy, f1, recall,
+             cm_figure_save_path) = diagnose_with_gru_model(self.data_stream,
+                                                            multiple_sensor, labels_path=self.dataset.get('labels'))
             print(f'indicator: {indicator}')
             print(f'num has fault: {num_has_fault}'
                   f'num has no fault: {num_has_no_fault}')
         elif 'lstm' in use_algorithm:
             # lstm的故障诊断
             (indicator, x_axis, num_has_fault, num_has_no_fault,
-             figure_path, complementary_figure, complementary_summary, accuracy, cm_figure_save_path) = diagnose_with_lstm_model(self.data_stream,
-                                                                                                  multiple_sensor, labels_path=self.dataset.get('labels'))
+             figure_path, complementary_figure, complementary_summary, accuracy, f1, recall,
+             cm_figure_save_path) = diagnose_with_lstm_model(self.data_stream,
+                                                             multiple_sensor, labels_path=self.dataset.get('labels'))
         elif 'ulcnn' in use_algorithm:
             # 一维卷积网络的故障诊断
             (indicator, x_axis, num_has_fault, num_has_no_fault,
-             figure_path, complementary_figure, complementary_summary, accuracy, cm_figure_save_path) = diagnose_with_ulcnn(self.data_stream,
-                                                                                             multiple_sensor, labels_path=self.dataset.get('labels'))
+             figure_path, complementary_figure, complementary_summary, accuracy, f1, recall,
+             cm_figure_save_path) = diagnose_with_ulcnn(self.data_stream,
+                                                        multiple_sensor, labels_path=self.dataset.get('labels'))
         elif 'spectrumModel' in use_algorithm:
             # 针对时频图的深度学习网络的故障诊断
             (indicator, x_axis, num_has_fault, num_has_no_fault,
-             figure_path, complementary_figure, complementary_summary, accuracy, cm_figure_save_path) = diagnose_with_simmodel(self.data_stream,
-                                                                                                multiple_sensor, labels_path=self.dataset.get('labels'))
+             figure_path, complementary_figure, complementary_summary, accuracy, f1, recall,
+             cm_figure_save_path) = diagnose_with_simmodel(self.data_stream,
+                                                           multiple_sensor, labels_path=self.dataset.get('labels'))
         elif 'private_fault_diagnosis' in use_algorithm:
             # 用户私有的故障诊断算法，分为深度学习和机器学习的故障诊断，其输入有区别
             print(f'use_algorithm is {use_algorithm}')
@@ -777,7 +788,8 @@ class Reactor:
                 deeplearning = True  # 调用私有的深度学习的故障诊断算法
             private_fault_diagnosis_algorithm = self.module_configuration['故障诊断']['params']  # 增值服务故障诊断算法源文件的存放路径
             (indicator, x_axis, num_has_fault, num_has_no_fault,
-             figure_path, complementary_figure, complementary_summary, accuracy, cm_figure_save_path) = diagnose_with_user_private_algorithm(
+             figure_path, complementary_figure, complementary_summary, accuracy, f1, recall,
+             cm_figure_save_path) = diagnose_with_user_private_algorithm(
                 self.data_stream,
                 private_fault_diagnosis_algorithm,
                 deeplearning,
@@ -793,8 +805,9 @@ class Reactor:
                                           'additional_model_six_deeplearning', 'additional_model_seven_deeplearning']
             if use_algorithm in additional_model_type_list:
                 (indicator, x_axis, num_has_fault, num_has_no_fault,
-                 figure_path, complementary_figure, complementary_summary) = additional_fault_diagnose(
-                    self.data_stream, multiple_sensor, model_type=use_algorithm)
+                 figure_path, complementary_figure, complementary_summary, accuracy, f1, recall,
+                 cm_figure_save_path) = additional_fault_diagnose(
+                    self.data_stream, multiple_sensor, model_type=use_algorithm, labels_path=self.dataset.get('labels'))
             else:
                 print("模型名称错误")
                 return ''
@@ -831,8 +844,11 @@ class Reactor:
             self.results_to_response['故障诊断']['complementary_summary'] = complementary_summary
             self.results_to_response['故障诊断']['resultText'] = self.module_configuration['故障诊断']['result'][
                 '诊断结果']
+            self.results_to_response['故障诊断']['enable_features_contrast'] = enable_features_contrast
             self.results_to_response['故障诊断']['mean_value_of_each_feature'] = mean_value_of_each_feature
             self.results_to_response['故障诊断']['accuracy'] = accuracy * 100
+            self.results_to_response['故障诊断']['f1_score'] = f1
+            self.results_to_response['故障诊断']['recall'] = recall
             self.results_to_response['故障诊断']['cm_figure_Base64'] = cm_figure_save_path
             # print(f'indicator: {indicator}')
             print(f"features name: {self.data_stream['features_name']}")
@@ -931,7 +947,6 @@ class Reactor:
                     self.error = '程序运行出错'
                 break
 
-
             if module == '插值处理':
                 if file_type == 'csv':
                     # 对csv形式存储的数据进行的插值
@@ -973,7 +988,6 @@ class Reactor:
                 queue.put(self.results_to_response)
             except Exception as e:
                 print(str(e))
-
 
 # 定义一个检测ndarray中nan值的函数, 如果发现连续的5个以上的nan值，则返回True，否则返回False
 # def has_consecutive_nan(array):
